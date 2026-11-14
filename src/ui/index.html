@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>MultiSocial</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-dark">
+  <header id="titlebar">
+    <button id="home-tab" class="tab-home active" title="Início (Ctrl+1)">
+      <img src="../assets/icon.png" alt="">
+    </button>
+    <div id="tabs"></div>
+    <button id="new-tab" class="tb-btn" title="Abrir rede (Ctrl+T)">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <div class="drag"></div>
+    <div id="nav" class="hidden">
+      <button class="tb-btn" data-nav="back" title="Voltar (Alt+←)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button class="tb-btn" data-nav="forward" title="Avançar (Alt+→)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+      <button class="tb-btn" data-nav="reload" title="Recarregar (Ctrl+R)"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
+    </div>
+    <button id="dl-btn" class="tb-btn" title="Downloads">
+      <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"/></svg>
+      <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/></svg>
+    </button>
+    <button id="settings-btn" class="tb-btn" title="Configurações (Ctrl+,)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+    <div class="controls-space"></div>
+  </header>
+
+  <div id="findbar" class="hidden">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="find-input" type="text" placeholder="Buscar na página…" spellcheck="false">
+    <span id="find-count">0/0</span>
+    <button class="tb-btn" id="find-prev" title="Anterior (Shift+Enter)"><svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg></button>
+    <button class="tb-btn" id="find-next" title="Próximo (Enter)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="tb-btn" id="find-close" title="Fechar (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <!-- Início estilo smartphone -->
+  <main id="home" class="page">
+    <div class="wallpaper"></div>
+    <div class="home-inner">
+      <div class="lock">
+        <div id="clock">00:00</div>
+        <div id="date"></div>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="search" type="text" placeholder="Pesquisar redes… (Enter abre)" spellcheck="false">
+      </div>
+      <div id="grid" class="grid"></div>
+      <p class="hint">Clique para abrir · Ctrl+clique abre em nova aba · Botão direito para mais opções</p>
+    </div>
+    <nav id="dock" class="dock"></nav>
+  </main>
+
+  <!-- Configurações -->
+  <main id="settings" class="page hidden">
+    <div class="settings-inner">
+      <h1>Configurações</h1>
+
+      <section>
+        <h2>Geral</h2>
+        <label class="row">
+          <span><b>Ao fechar a janela (X)</b><small>O que o MultiSocial faz quando você clica em fechar.</small></span>
+          <select id="set-closeAction">
+            <option value="tray">Minimizar para a bandeja</option>
+            <option value="quit">Fechar o programa</option>
+            <option value="">Perguntar na próxima vez</option>
+          </select>
+        </label>
+        <label class="row"><span><b>Iniciar com o Windows</b><small>Abre minimizado na bandeja ao ligar o PC.</small></span><input type="checkbox" class="switch" id="set-startWithWindows"></label>
+        <label class="row"><span><b>Iniciar minimizado</b><small>Abre direto na bandeja, sem mostrar a janela.</small></span><input type="checkbox" class="switch" id="set-startMinimized"></label>
+        <label class="row"><span><b>Pausar vídeos ao trocar de aba</b><small>Ao sair de uma aba, o vídeo que estava tocando nela é pausado (o PiP continua).</small></span><input type="checkbox" class="switch" id="set-pauseOnSwitch"></label>
+        <label class="row"><span><b>Restaurar abas ao abrir</b><small>Reabre as redes que estavam abertas na última vez.</small></span><input type="checkbox" class="switch" id="set-restoreTabs"></label>
+      </section>
+
+      <section>
+        <h2>Notificações</h2>
+        <label class="row"><span><b>Permitir notificações das redes</b><small>Mensagens do WhatsApp, Telegram, Instagram etc.</small></span><input type="checkbox" class="switch" id="set-notifications"></label>
+        <label class="row"><span><b>Piscar a barra de tarefas</b><small>Quando chegar mensagem nova com a janela em segundo plano.</small></span><input type="checkbox" class="switch" id="set-flashTaskbar"></label>
+      </section>
+
+      <section>
+        <h2>Downloads</h2>
+        <div class="row">
+          <span><b>Pasta de downloads</b><small id="dl-dir">—</small></span>
+          <span class="btns"><button class="btn" id="dl-open">Abrir</button><button class="btn" id="dl-change">Alterar…</button></span>
+        </div>
+        <label class="row"><span><b>Sempre perguntar onde salvar</b><small>Mostra a janela "Salvar como" em todos os downloads.</small></span><input type="checkbox" class="switch" id="set-askDownload"></label>
+      </section>
+
+      <section>
+        <h2>Aparência</h2>
+        <label class="row">
+          <span><b>Tema</b></span>
+          <select id="set-theme"><option value="dark">Escuro</option><option value="light">Claro</option></select>
+        </label>
+        <label class="row">
+          <span><b>Tamanho dos ícones no início</b></span>
+          <select id="set-iconSize"><option value="small">Pequeno</option><option value="medium">Médio</option><option value="large">Grande</option></select>
+        </label>
+      </section>
+
+      <section>
+        <h2>Redes sociais</h2>
+        <p class="muted">Escolha quais aparecem no início. "Sair" apaga o login daquela rede neste PC.</p>
+        <div id="svc-list" class="svc-list"></div>
+        <form id="custom-form" class="custom-form">
+          <b>Adicionar site personalizado</b>
+          <div class="custom-fields">
+            <input id="custom-name" type="text" placeholder="Nome (ex.: Gmail)" maxlength="24">
+            <input id="custom-url" type="text" placeholder="Endereço (ex.: mail.google.com)" required>
+            <input id="custom-color" type="color" value="#6c5ce7" title="Cor do ícone">
+            <button class="btn primary" type="submit">Adicionar</button>
+          </div>
+          <small id="custom-error" class="error"></small>
+        </form>
+      </section>
+
+      <section>
+        <h2>Atualizações</h2>
+        <div class="row"><span><b>Verificar atualizações</b><small id="cur-version">—</small></span><button class="btn primary" id="check-updates">Verificar agora</button></div>
+        <label class="row"><span><b>Verificar automaticamente</b><small>Ao abrir o app e a cada 6 horas. Avisa quando houver versão nova.</small></span><input type="checkbox" class="switch" id="set-autoUpdateCheck"></label>
+      </section>
+
+      <section>
+        <h2>Avançado</h2>
+        <label class="row"><span><b>Aceleração por hardware</b><small>Desative se aparecerem telas pretas ou travamentos (reinicia o app).</small></span><input type="checkbox" class="switch" id="set-hwAccel"></label>
+        <div class="row"><span><b>Sair de todas as contas</b><small>Apaga logins, cookies e cache de todas as redes.</small></span><button class="btn danger" id="clear-all">Limpar tudo</button></div>
+      </section>
+
+      <section>
+        <h2>Atalhos de teclado</h2>
+        <div class="shortcuts">
+          <div><kbd>Ctrl</kbd>+<kbd>1</kbd><span>Menu inicial</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>2…8</kbd><span>Ir para a aba 2…8</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>9</kbd><span>Última aba</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Tab</kbd><span>Próxima aba</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd><span>Aba anterior</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>W</kbd><span>Fechar aba</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd><span>Reabrir aba fechada</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>T</kbd><span>Início + pesquisar rede</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>F</kbd><span>Buscar na página</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>R</kbd> / <kbd>F5</kbd><span>Recarregar</span></div>
+          <div><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd><span>Voltar / avançar</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd><span>Zoom (salvo por rede)</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span>Aba atual em nova janela</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd><span>Mini janela flutuante</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd><span>Captura de tela da página</span></div>
+          <div><kbd>Ctrl</kbd>+<kbd>,</kbd><span>Configurações</span></div>
+          <div><kbd>F11</kbd><span>Tela cheia</span></div>
+          <div><kbd>F12</kbd><span>Ferramentas de desenvolvedor</span></div>
+        </div>
+      </section>
+
+      <p class="about">MultiSocial <span id="version"></span></p>
+    </div>
+  </main>
+
+  <main id="web-bg" class="page hidden"><div class="spinner"></div></main>
+
+  <script src="app.js"></script>
+</body>
+</html>
