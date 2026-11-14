@@ -1,15 +1,22 @@
 name: Build MultiSocial
 
+# Fluxo de versão:
+#  - push na main: compila; se a versão do package.json ainda não tiver Release,
+#    cria a Release "vX.Y.Z" com o instalador e o portable (usada pelo atualizador do app).
+#  - Release publicada manualmente: compila e anexa os .exe a ela.
 on:
   push:
     branches: [main]
-    tags: ['v*']
   release:
     types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -25,9 +32,35 @@ jobs:
         with:
           name: MultiSocial-Windows
           path: dist/*.exe
-      # Ao publicar uma Release (ou enviar uma tag v*), anexa os .exe à Release usada pelo verificador de atualizações do app
-      - name: Publicar release
-        if: startsWith(github.ref, 'refs/tags/v')
+
+      - name: Ler versão
+        id: ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Criar Release da nova versão
+        if: github.event_name != 'release' && steps.ver.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: MultiSocial v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: CHANGELOG.md
+          files: |
+            dist/MultiSocial-Setup-*.exe
+            dist/MultiSocial-*-Portable.exe
+
+      - name: Anexar à Release publicada
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |

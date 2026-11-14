@@ -53,6 +53,6 @@ O workflow `.github/workflows/build.yml` compila o instalador e o portable no Gi
 ## Observações
 
 - O Gmail e o "Entrar com Google" usam identificação de Firefox para o Google aceitar o login. Se mesmo assim ele bloquear, entre com e-mail e senha da própria rede.
-- Para publicar uma atualização: aumente `version` no package.json, publique uma Release no GitHub com a tag `v1.2.0` (ou envie a tag) e o GitHub Actions compila e anexa os .exe a ela. O app compara a versão com a última Release do repositório `Buno-o/MultiSocial`.
+- Para publicar uma atualização: aumente `version` no package.json, escreva as novidades no CHANGELOG.md e faça push na `main`. O GitHub Actions compila e cria a Release `vX.Y.Z` sozinho, e o app avisa os usuários.
 - Os dados ficam em `%APPDATA%\MultiSocial` e os downloads em `Downloads\MultiSocial`.
 - A gravação de vídeo acontece em tempo real: um vídeo de 1 minuto leva 1 minuto para gravar. O arquivo é salvo em `.webm`.
