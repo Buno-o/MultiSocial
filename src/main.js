@@ -110,10 +110,53 @@ function activeWc() {
 // ---------------------------------------------------------------------------
 // Sessões (uma por rede = login separado e persistente)
 // ---------------------------------------------------------------------------
-const ALLOWED_PERMS = new Set([
-  'notifications', 'media', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen',
-  'pointerLock', 'mediaKeySystem', 'speaker-selection', 'window-management', 'display-capture'
-]);
+// Permitidas sem perguntar (inofensivas)
+const ALLOWED_PERMS = new Set(['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'mediaKeySystem', 'speaker-selection']);
+// Perguntam ao usuário (resposta lembrada por rede)
+const ASK_PERMS = {
+  media: 'usar sua câmera e/ou microfone',
+  'display-capture': 'gravar/compartilhar a sua tela',
+  'clipboard-read': 'ler a sua área de transferência',
+  geolocation: 'saber a sua localização'
+};
+function permKey(perm, details) {
+  if (perm !== 'media') return perm;
+  const t = (details && details.mediaTypes) || [];
+  return t.includes('video') ? 'media-video' : 'media-audio';
+}
+const permQueue = new Map();
+async function askPermission(serviceId, perm, details) {
+  const key = permKey(perm, details);
+  const saved = ((store.get('perms') || {})[serviceId] || {})[key];
+  if (saved === true || saved === false) return saved;
+  const qk = serviceId + '|' + key;
+  if (permQueue.has(qk)) return permQueue.get(qk);
+  const p = (async () => {
+    const svc = getService(serviceId);
+    const what = key === 'media-video' ? 'usar sua câmera e microfone' : key === 'media-audio' ? 'usar seu microfone' : ASK_PERMS[perm];
+    const r = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: 'Permissão',
+      message: `${svc ? svc.name : 'Este site'} quer ${what}.`,
+      detail: details && details.requestingUrl ? `Site: ${new URL(details.requestingUrl).hostname}` : '',
+      buttons: ['Permitir', 'Bloquear'],
+      defaultId: 1,
+      cancelId: 1,
+      checkboxLabel: 'Lembrar minha escolha para esta rede',
+      checkboxChecked: true,
+      noLink: true
+    });
+    const ok = r.response === 0;
+    if (r.checkboxChecked) {
+      const all = store.get('perms') || {};
+      all[serviceId] = { ...(all[serviceId] || {}), [key]: ok };
+      store.set('perms', all);
+    }
+    return ok;
+  })();
+  permQueue.set(qk, p);
+  try { return await p; } finally { permQueue.delete(qk); }
+}
 function stripClientHints(headers, ua) {
   for (const k of Object.keys(headers)) if (/^sec-ch-ua/i.test(k)) delete headers[k];
   headers['User-Agent'] = ua;
@@ -133,12 +176,30 @@ function setupSession(ses, serviceId) {
     ses.webRequest.onBeforeSendHeaders({ urls: ['https://accounts.google.com/*'] }, (d, cb) =>
       cb({ requestHeaders: stripClientHints(d.requestHeaders, FF_UA) }));
   }
-  const allow = (perm) => {
+  ses.setPermissionRequestHandler((_wc, perm, cb, details) => {
+    if (perm === 'notifications') return cb(!!store.get('notifications'));
+    if (ALLOWED_PERMS.has(perm)) return cb(true);
+    if (ASK_PERMS[perm]) { askPermission(serviceId, perm, details).then(cb, () => cb(false)); return; }
+    cb(false);
+  });
+  ses.setPermissionCheckHandler((_wc, perm, _origin, details) => {
     if (perm === 'notifications') return !!store.get('notifications');
-    return ALLOWED_PERMS.has(perm);
-  };
-  ses.setPermissionRequestHandler((_wc, perm, cb) => cb(allow(perm)));
-  ses.setPermissionCheckHandler((_wc, perm) => allow(perm));
+    if (ALLOWED_PERMS.has(perm)) return true;
+    if (ASK_PERMS[perm]) {
+      const saved = (store.get('perms') || {})[serviceId] || {};
+      // "ainda não decidido" conta como disponível para o site tentar; o pedido real abre a pergunta
+      if (perm === 'media') return saved['media-video'] !== false || saved['media-audio'] !== false;
+      return saved[perm] !== false;
+    }
+    return false;
+  });
+  // Compartilhar tela (Discord, Meet...): só depois de o usuário permitir
+  ses.setDisplayMediaRequestHandler(async (_req, cb) => {
+    if (!(await askPermission(serviceId, 'display-capture'))) return cb({});
+    const { desktopCapturer } = require('electron');
+    const sources = await desktopCapturer.getSources({ types: ['screen'] });
+    cb(sources[0] ? { video: sources[0] } : {});
+  });
   try { ses.setSpellCheckerLanguages(['pt-BR', 'en-US']); } catch {}
   ses.on('will-download', onWillDownload);
 }
@@ -603,6 +664,13 @@ function wireWebContents(wc, ctx) {
     if (tab) createServiceTab(ctx.serviceId, url, { activate: disposition !== 'background-tab', afterId: tab.id });
     else openWindow(url, ctx.serviceId);
     return { action: 'deny' };
+  });
+  wc.on('will-attach-webview', (e) => e.preventDefault());
+  wc.on('will-navigate', (e, url) => {
+    if (!/^(https?:|about:|data:text\/html)/i.test(url)) {
+      e.preventDefault();
+      if (/^(mailto:|tel:|magnet:|zoommtg:|msteams:|spotify:|steam:|discord:|tg:|whatsapp:)/i.test(url)) shell.openExternal(url).catch(() => {});
+    }
   });
   wc.on('did-create-window', (child) => {
     child.removeMenu();
@@ -1232,6 +1300,10 @@ async function checkForUpdates(manual = false) {
 }
 
 async function installUpdate(asset, portable) {
+  if (!/^https:\/\/github\.com\/Buno-o\/MultiSocial\/releases\/download\//i.test(asset.browser_download_url || '')) {
+    dialog.showMessageBox(win, { type: 'error', message: 'Endereço de atualização inválido.' });
+    return;
+  }
   const dir = path.join(app.getPath('temp'), 'MultiSocial-update');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, asset.name);
@@ -1322,7 +1394,7 @@ function applyTheme() {
 
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
-    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'pauseOnSwitch', 'autoUpdateCheck'];
+    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'pauseOnSwitch', 'autoUpdateCheck', 'disablePasskeys'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
@@ -1412,6 +1484,8 @@ function registerIpc() {
   ipcMain.on('ui:check-updates', () => checkForUpdates(true));
   ipcMain.on('ui:external', (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
 
+  ipcMain.on('web:flags', (e) => { e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false }; });
+  ipcMain.on('ui:reset-perms', () => { store.set('perms', {}); dialog.showMessageBox(win, { type: 'info', message: 'Permissões redefinidas.', detail: 'Os sites vão perguntar de novo antes de usar câmera, microfone, tela ou área de transferência.' }); });
   ipcMain.on('web:notif-click', (e) => {
     const t = tabByWc(e.sender);
     showMain();

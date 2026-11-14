@@ -20,7 +20,9 @@ const DEFAULTS = {
   theme: 'dark',              // 'dark' | 'light'
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
-  pauseOnSwitch: true,        // pausar vídeos ao trocar de aba
+  pauseOnSwitch: true,
+  disablePasskeys: true,      // bloqueia popup de chave de acesso/pendrive
+  perms: {},                  // permissões lembradas por rede        // pausar vídeos ao trocar de aba
   autoUpdateCheck: true,
   skipVersion: '',
   lastUpdateCheck: 0,

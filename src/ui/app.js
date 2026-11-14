@@ -274,7 +274,7 @@ function showAddModal() {
 }
 
 // ------------------------------------------------------------------ Configurações
-const SETTING_KEYS = ['pauseOnSwitch', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
+const SETTING_KEYS = ['disablePasskeys', 'pauseOnSwitch', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
 function renderSettings() {
   for (const k of SETTING_KEYS) {
     const input = document.getElementById('set-' + k);
@@ -319,6 +319,7 @@ for (const k of SETTING_KEYS) {
 $('#dl-change').onclick = () => ms.invoke('ui:pick-download-dir');
 $('#dl-open').onclick = () => ms.send('ui:open-download-dir');
 $('#clear-all').onclick = () => ms.send('ui:clear-all');
+$('#reset-perms').onclick = () => ms.send('ui:reset-perms');
 $('#check-updates').onclick = () => ms.send('ui:check-updates');
 ms.on('update:status', (st) => {
   const b = $('#check-updates');

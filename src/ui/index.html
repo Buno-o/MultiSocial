@@ -123,6 +123,12 @@
       </section>
 
       <section>
+        <h2>Privacidade e segurança</h2>
+        <label class="row"><span><b>Desativar chaves de acesso (passkeys)</b><small>Impede o popup "Segurança do Windows" pedindo pendrive/chave USB. Os sites passam a pedir a senha.</small></span><input type="checkbox" class="switch" id="set-disablePasskeys"></label>
+        <div class="row"><span><b>Permissões dos sites</b><small>Câmera, microfone, tela, localização e área de transferência sempre perguntam antes.</small></span><button class="btn" id="reset-perms">Redefinir permissões</button></div>
+      </section>
+
+      <section>
         <h2>Atualizações</h2>
         <div class="row"><span><b>Verificar atualizações</b><small id="cur-version">—</small></span><button class="btn primary" id="check-updates">Verificar agora</button></div>
         <label class="row"><span><b>Verificar automaticamente</b><small>Ao abrir o app e a cada 6 horas. Avisa quando houver versão nova.</small></span><input type="checkbox" class="switch" id="set-autoUpdateCheck"></label>
