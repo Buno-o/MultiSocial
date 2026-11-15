@@ -55,6 +55,23 @@ const downloads = [];
 let dlCounter = 0;
 
 // ---------------------------------------------------------------------------
+// Log de diagnóstico (%APPDATA%\MultiSocial\logs\multisocial.log)
+// ---------------------------------------------------------------------------
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'multisocial.log');
+function log(...args) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    try { if (fs.statSync(LOG_FILE).size > 2 * 1024 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.old'); } catch {}
+    const line = `[${new Date().toISOString()}] ` + args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch {}
+}
+log('--- MultiSocial', app.getVersion(), 'Electron', process.versions.electron, 'Chrome', process.versions.chrome, process.platform, require('os').release());
+app.on('child-process-gone', (_e, d) => log('processo filho encerrou', d));
+process.on('uncaughtException', (e) => log('erro não tratado', String(e && e.stack || e)));
+
+// ---------------------------------------------------------------------------
 // Utilidades
 // ---------------------------------------------------------------------------
 function allServices() {
@@ -320,6 +337,10 @@ function createMainWindow() {
   // janela minimizada ou na bandeja também conta como "segundo plano"
   win.on('minimize', () => pauseIfNotBg(activeTab()));
   win.on('hide', () => pauseIfNotBg(activeTab()));
+  // ao voltar da bandeja/minimizado, força o redesenho da aba atual
+  const redraw = () => { const t = activeTab(); if (t) t.shown = false; layout(); };
+  win.on('show', redraw);
+  win.on('restore', redraw);
   win.on('maximize', layout);
   win.on('unmaximize', layout);
   win.on('enter-full-screen', layout);
@@ -409,10 +430,26 @@ function layout() {
   for (const t of tabs) {
     if (!t.view) continue;
     if (t.id === activeId) {
-      t.view.setBounds({ x: 0, y: top, width: w, height: Math.max(0, h - top) });
-      t.view.setVisible(true);
+      const bounds = { x: 0, y: top, width: w, height: Math.max(0, h - top) };
+      if (!t.shown) {
+        // Contorno de bug do Electron: uma aba que ficou oculta pode voltar em branco
+        // até a janela ser redimensionada. Mostramos com 1px a menos e corrigimos em seguida.
+        t.shown = true;
+        t.view.setBounds({ ...bounds, height: Math.max(0, bounds.height - 1) });
+        t.view.setVisible(true);
+        setTimeout(() => {
+          if (t.view && activeId === t.id && !t.view.webContents.isDestroyed()) {
+            layout();
+            try { t.view.webContents.invalidate(); } catch {}
+          }
+        }, 30);
+      } else {
+        t.view.setBounds(bounds);
+        t.view.setVisible(true);
+      }
     } else {
       t.view.setVisible(false);
+      t.shown = false;
     }
   }
 }
@@ -469,8 +506,7 @@ function createServiceTab(serviceId, url, opts = {}) {
       preload: WEB_PRELOAD,
       contextIsolation: true,
       sandbox: true,
-      spellcheck: true,
-      backgroundThrottling: false
+      spellcheck: true
     }
   });
   view.setBackgroundColor('#ffffff');
@@ -537,6 +573,7 @@ function activateTab(id) {
   activeId = id;
   layout();
   const t = activeTab();
+  if (t && t.view && t.view.webContents.isCrashed()) { log('aba travada ao ativar, recarregando', t.serviceId); t.view.webContents.reload(); }
   if (t && t.view) t.view.webContents.focus();
   else if (win) win.webContents.focus();
   sendTabs();
@@ -739,8 +776,22 @@ function wireWebContents(wc, ctx) {
       layout();
     });
     wc.on('render-process-gone', (_e, d) => {
-      if (d.reason !== 'clean-exit') setTimeout(() => { try { wc.reload(); } catch {} }, 1500);
+      log('página travou', tab.serviceId, d, wc.getURL());
+      if (d.reason === 'clean-exit') return;
+      const now = Date.now();
+      tab.crashes = (tab.crashes || []).filter((x) => now - x < 60000);
+      tab.crashes.push(now);
+      tab.lastCrash = d.reason;
+      if (tab.crashes.length >= 3) {
+        // evita ficar recarregando sem parar: mostra uma tela com o motivo
+        const url = /^https?:/i.test(wc.getURL()) ? wc.getURL() : (getService(tab.serviceId) || {}).url;
+        wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(crashPage(url, d))).catch(() => {});
+      } else {
+        setTimeout(() => { try { wc.reload(); } catch {} }, 1500);
+      }
     });
+    wc.on('unresponsive', () => log('página não responde', tab.serviceId, wc.getURL()));
+    wc.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3) log('falha ao carregar', tab.serviceId, code, desc, url); });
     wc.on('zoom-changed', (_e, dir) => setZoom(wc, dir === 'in' ? 0.1 : -0.1, tab.serviceId));
   }
 }
@@ -754,6 +805,17 @@ small{display:block;margin-top:18px;color:#5d6378;font-size:12px}</style></head>
 <div style="font-size:46px">📡</div><h1>Não foi possível carregar a página</h1>
 <p>Verifique sua conexão com a internet. O MultiSocial tenta de novo sozinho a cada 15 segundos.</p>
 <a href="${u}">Tentar novamente</a><small>${String(desc || '').replace(/[<>&]/g, '')}</small></div></body></html>`;
+}
+
+function crashPage(url, d) {
+  const u = String(url || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>A página travou</title>
+<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0e1016;color:#e8e8ee;font-family:"Segoe UI",sans-serif;text-align:center}
+.c{max-width:480px;padding:24px}h1{font-weight:600;font-size:22px}p{color:#8d93a8;line-height:1.5}a{display:inline-block;margin-top:10px;padding:10px 22px;border-radius:10px;background:#6c7cff;color:#fff;text-decoration:none;font-weight:600}
+code{display:block;margin-top:18px;color:#ff8a95;font-size:12px}</style></head><body><div class="c">
+<div style="font-size:46px">💥</div><h1>Esta página travou várias vezes</h1>
+<p>O MultiSocial parou de recarregar automaticamente para não ficar em loop. Se continuar, desative a "Aceleração por hardware" em Configurações &gt; Avançado e envie o log (Configurações &gt; Avançado &gt; Abrir pasta de logs).</p>
+<a href="${u}">Tentar novamente</a><code>motivo: ${String(d.reason).replace(/[<>&]/g, '')} · código: ${Number(d.exitCode) || 0}</code></div></body></html>`;
 }
 
 function setZoom(wc, delta, serviceId, reset) {
@@ -1461,6 +1523,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win, { title: 'Pasta de downloads', defaultPath: downloadDir(), properties: ['openDirectory', 'createDirectory'] });
     if (!r.canceled && r.filePaths[0]) { store.set('downloadDir', r.filePaths[0]); sendConfig(); }
   });
+  ipcMain.on('ui:open-logs', () => { fs.mkdirSync(LOG_DIR, { recursive: true }); shell.openPath(LOG_DIR); });
   ipcMain.on('ui:open-download-dir', () => shell.openPath(downloadDir()));
   ipcMain.on('ui:logout', (_e, id) => logout(id));
   ipcMain.handle('ui:add-custom', (_e, { name, url, color }) => {

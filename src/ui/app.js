@@ -331,6 +331,7 @@ for (const k of SETTING_KEYS) {
 $('#dl-change').onclick = () => ms.invoke('ui:pick-download-dir');
 $('#dl-open').onclick = () => ms.send('ui:open-download-dir');
 $('#clear-all').onclick = () => ms.send('ui:clear-all');
+$('#open-logs').onclick = () => ms.send('ui:open-logs');
 $('#reset-perms').onclick = () => ms.send('ui:reset-perms');
 $('#check-updates').onclick = () => ms.send('ui:check-updates');
 ms.on('update:status', (st) => {
