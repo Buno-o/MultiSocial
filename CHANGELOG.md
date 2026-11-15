@@ -1,7 +1,5 @@
-## Novidades da v1.2.0
+## Novidades da v1.3.0
 
-- Acabou o popup "Segurança do Windows" pedindo chave de acesso/pendrive (passkey) no login do Google e de outros sites: agora eles pedem a senha. Dá para reativar em Configurações > Privacidade e segurança.
-- Câmera, microfone, compartilhamento de tela, localização e leitura da área de transferência agora **perguntam antes** (com opção de lembrar por rede). Antes eram liberados automaticamente.
-- Botão "Redefinir permissões" nas Configurações.
-- Links com protocolos externos (mailto:, tel:, etc.) abrem no programa certo e esquemas desconhecidos são bloqueados.
-- O atualizador só aceita downloads vindos das Releases oficiais do GitHub.
+- **Reprodução em segundo plano por rede**: cada site pode continuar tocando ou pausar quando você troca de aba, minimiza ou manda para a bandeja. YouTube, Twitch e Kick continuam tocando por padrão; as outras pausam. Mude em Configurações > Redes sociais (chave "2º plano") ou com o botão direito na aba / no ícone do início.
+- **Cookies criptografados**: os cookies de login de todas as redes agora são gravados criptografados com uma chave protegida pelo Windows (DPAPI), presa à sua conta de usuário. Logins antigos continuam funcionando.
+- **Executável mais protegido**: o app não pode mais ser usado como Node.js genérico, ignora variáveis/flags de depuração do Node e só carrega o próprio código empacotado.

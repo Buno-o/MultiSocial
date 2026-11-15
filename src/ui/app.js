@@ -274,7 +274,7 @@ function showAddModal() {
 }
 
 // ------------------------------------------------------------------ Configurações
-const SETTING_KEYS = ['disablePasskeys', 'pauseOnSwitch', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
+const SETTING_KEYS = ['disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
 function renderSettings() {
   for (const k of SETTING_KEYS) {
     const input = document.getElementById('set-' + k);
@@ -290,6 +290,15 @@ function renderSettings() {
     const row = el('div', 'svc-item');
     row.appendChild(makeIcon(s, 30));
     row.appendChild(el('span', 'n', esc(s.name)));
+    const bgVal = (config.bgPlay || {})[s.id];
+    const bgWrap = el('label', 'mini-sw');
+    bgWrap.title = 'Continuar reproduzindo em segundo plano';
+    const bg = el('input', 'switch');
+    bg.type = 'checkbox';
+    bg.checked = bgVal === true || bgVal === false ? bgVal : !!s.bg;
+    bg.onchange = () => ms.invoke('ui:set-config', 'bgPlay', { ...(config.bgPlay || {}), [s.id]: bg.checked });
+    bgWrap.append(el('span', '', '2º plano'), bg);
+    row.appendChild(bgWrap);
     const out = el('button', 'btn small', 'Sair');
     out.title = 'Sair da conta desta rede';
     out.onclick = () => ms.send('ui:logout', s.id);
@@ -298,12 +307,15 @@ function renderSettings() {
     sw.type = 'checkbox';
     sw.checked = !hidden.has(s.id);
     sw.title = 'Mostrar no início';
+    const swWrap = el('label', 'mini-sw');
+    swWrap.title = 'Mostrar no início';
     sw.onchange = () => {
       const h = new Set(config.hidden || []);
       if (sw.checked) h.delete(s.id); else h.add(s.id);
       ms.invoke('ui:set-config', 'hidden', [...h]);
     };
-    row.appendChild(sw);
+    swWrap.append(el('span', '', 'Início'), sw);
+    row.appendChild(swWrap);
     list.appendChild(row);
   }
 }

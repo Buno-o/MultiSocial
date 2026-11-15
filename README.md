@@ -15,7 +15,8 @@ Todas as suas redes sociais em um só app para Windows, com abas no estilo naveg
   - Página: abrir a aba em nova janela, mini janela sempre no topo, silenciar, captura de tela, zoom e inspecionar.
 - **Bandeja**: na primeira vez em que você fecha a janela, o app pergunta se deve minimizar para a bandeja. Depois dá para mudar em Configurações > "Ao fechar a janela".
 - **Notificações** das redes. Clicar numa notificação abre a aba certa.
-- **Pausa automática**: o vídeo para quando você troca de aba (pode desligar em Configurações).
+- **Reprodução em segundo plano por rede**: YouTube, Twitch e Kick continuam tocando ao trocar de aba/minimizar; as outras pausam (configurável por rede).
+- **Segurança**: cookies criptografados (DPAPI do Windows), câmera/microfone/tela só com permissão, chaves de acesso (passkeys) bloqueadas por padrão.
 - **Atualizações**: verifica as Releases do GitHub ao abrir e a cada 6 horas, baixa a nova versão e reinicia já atualizado (portable ou instalador).
 - Downloads com progresso, buscar na página, zoom salvo por rede, tema claro e escuro, iniciar com o Windows.
 

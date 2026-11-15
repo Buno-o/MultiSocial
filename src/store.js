@@ -20,7 +20,7 @@ const DEFAULTS = {
   theme: 'dark',              // 'dark' | 'light'
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
-  pauseOnSwitch: true,
+  bgPlay: {},                 // por rede: true = continua tocando em 2º plano (sobrepõe o padrão)
   disablePasskeys: true,      // bloqueia popup de chave de acesso/pendrive
   perms: {},                  // permissões lembradas por rede        // pausar vídeos ao trocar de aba
   autoUpdateCheck: true,

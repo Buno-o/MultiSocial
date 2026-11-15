@@ -317,6 +317,9 @@ function createMainWindow() {
   win.once('ready-to-show', () => { if (!startHidden) win.show(); });
 
   win.on('resize', layout);
+  // janela minimizada ou na bandeja também conta como "segundo plano"
+  win.on('minimize', () => pauseIfNotBg(activeTab()));
+  win.on('hide', () => pauseIfNotBg(activeTab()));
   win.on('maximize', layout);
   win.on('unmaximize', layout);
   win.on('enter-full-screen', layout);
@@ -512,10 +515,24 @@ function pauseVideos(wc) {
   } catch {}
 }
 
+function bgAllowed(serviceId) {
+  const o = (store.get('bgPlay') || {})[serviceId];
+  if (o === true || o === false) return o;
+  const svc = getService(serviceId);
+  return !!(svc && svc.bg);
+}
+function setBgPlay(serviceId, value) {
+  store.set('bgPlay', { ...(store.get('bgPlay') || {}), [serviceId]: !!value });
+  sendConfig();
+}
+function pauseIfNotBg(t) {
+  if (t && t.view && !bgAllowed(t.serviceId)) pauseVideos(t.view.webContents);
+}
+
 function activateTab(id) {
   if (id !== 'home' && !tabs.find((t) => t.id === id)) id = 'home';
   const prev = activeTab();
-  if (prev && prev.view && prev.id !== id && store.get('pauseOnSwitch')) pauseVideos(prev.view.webContents);
+  if (prev && prev.id !== id) pauseIfNotBg(prev);
   if (findOpen) closeFind();
   activeId = id;
   layout();
@@ -1118,6 +1135,7 @@ function tabMenu(id) {
     { type: 'separator' },
     { label: 'Abrir em nova janela', click: () => moveTabToWindow(t) },
     { label: 'Mini janela flutuante (sempre no topo)', click: () => openWindow(wc.getURL(), t.serviceId, { mini: true }) },
+    { label: 'Continuar reproduzindo em segundo plano', type: 'checkbox', checked: bgAllowed(t.serviceId), click: (mi) => setBgPlay(t.serviceId, mi.checked) },
     { label: t.muted ? 'Reativar som da aba' : 'Silenciar aba', click: () => { wc.setAudioMuted(!wc.isAudioMuted()); t.muted = wc.isAudioMuted(); sendTabs(); } },
     { type: 'separator' },
     { label: `Sair da conta (${svc ? svc.name : ''})`, click: () => logout(t.serviceId) },
@@ -1141,6 +1159,7 @@ function homeMenu(serviceId) {
     { label: 'Abrir em nova janela', click: () => openWindow(svc.url, serviceId) },
     { label: 'Abrir em mini janela flutuante', click: () => openWindow(svc.url, serviceId, { mini: true }) },
     { type: 'separator' },
+    { label: 'Continuar reproduzindo em segundo plano', type: 'checkbox', checked: bgAllowed(serviceId), click: (mi) => setBgPlay(serviceId, mi.checked) },
     {
       label: inDock ? 'Remover do dock' : 'Fixar no dock', click: () => {
         const d = (store.get('dock') || []).filter((x) => x !== serviceId);
@@ -1394,7 +1413,7 @@ function applyTheme() {
 
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
-    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'pauseOnSwitch', 'autoUpdateCheck', 'disablePasskeys'];
+    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
