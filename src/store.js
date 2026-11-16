@@ -29,6 +29,8 @@ const DEFAULTS = {
   icons: {},                  // logos buscadas dos sites
   iconsFetchedAt: 0,
   faviconsV: 0,
+  gen: {},                    // geração da pasta de dados de cada rede (muda ao sair da conta)
+  pendingWipe: [],            // pastas a apagar na próxima abertura
   pinHash: '',                // PIN (scrypt)
   pinSalt: '',
   lockOnStart: true,

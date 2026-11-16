@@ -1,11 +1,6 @@
-## Novidades da v1.4.0
+## Novidades da v1.4.1
 
-- **Links no navegador padrão**: links para outros sites e links de "nova aba" abrem no seu navegador (dá para desligar em Configurações > Links). A navegação dentro da própria rede e os logins continuam no app.
-- **Voltar / Avançar flutuantes**: botões pequenos aparecem dentro da página quando o mouse chega perto do canto superior esquerdo (voltar) ou direito (avançar).
-- **Ícone de internet** na barra superior: abre uma nova guia no seu navegador padrão.
-- **Modo celular** por site (ícone ao lado do de internet): o site abre na versão de celular, numa coluna estreita.
-- **IAs adicionadas**: ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek, Grok e Le Chat (Mistral), abrindo direto na conversa.
-- **Arrastar e soltar** os ícones do início para reorganizar; arraste para o dock para fixar, ou para fora do dock para remover.
-- **Logos corrigidas**: os ícones não ficam mais com a logo do Google (vinha da tela de login). As logos agora são buscadas no próprio site.
-- **Bloqueio por PIN**: defina um PIN (4 a 8 números) e use o cadeado na barra superior para bloquear. Opções para bloquear ao abrir, ao minimizar ou com o PC inativo.
-- **Menos RAM**: abas sem uso são suspensas depois de 15 minutos (mensageiros e abas tocando som nunca são), abas restauradas só carregam quando abertas, e o uso de memória aparece nas Configurações e no botão direito da aba.
+- **Barra de tarefas**: o ícone fixado e a janela aberta agora são o mesmo ícone (antes abria um segundo ícone). Na versão portátil, o app também cria um atalho no Menu Iniciar. Se você já tinha fixado o .exe, desafixe o ícone antigo e fixe de novo pela janela aberta (botão direito no ícone da barra > Fixar na barra de tarefas).
+- **Sites que às vezes não carregavam**: a aba visível é redesenhada ao terminar de carregar e ao focar a janela; se ficar mais de 30 s carregando, recarrega sozinha; abas na tela de erro ou travadas são recarregadas quando o PC volta da suspensão ou a tela do Windows é desbloqueada. Novo item no botão direito da aba: "Recriar aba".
+- **Sair da conta** agora apaga de verdade: cookies, login, armazenamento local, IndexedDB, cache, service workers, dicionário pessoal, permissões e zoom daquela rede, e a pasta de dados é excluída do disco (não vai para a Lixeira).
+- **Sair de todas as contas** apaga tudo de todas as redes (inclusive abas salvas, logos salvas e o log) e reinicia o app.

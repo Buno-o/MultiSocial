@@ -137,8 +137,25 @@ function tabUrl(t) {
   return t.url || '';
 }
 
+// Cada rede usa uma pasta própria. Ao "Sair da conta", a rede passa a usar uma pasta nova
+// (nova geração) e a antiga é apagada do disco — sem ir para a Lixeira.
+const PARTITIONS_DIR = path.join(app.getPath('userData'), 'Partitions');
+function partitionName(serviceId) {
+  const g = (store.get('gen') || {})[serviceId] || 0;
+  return g ? `ms-${serviceId}-g${g}` : `ms-${serviceId}`;
+}
+function wipeDir(dir) {
+  try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 }); } catch {}
+  return !fs.existsSync(dir);
+}
+function wipePending() {
+  const pending = store.get('pendingWipe') || [];
+  const left = pending.filter((name) => !wipeDir(path.join(PARTITIONS_DIR, name)));
+  store.set('pendingWipe', left);
+  if (pending.length) log('dados apagados do disco:', pending.length - left.length, 'pendentes:', left.length);
+}
 function getSession(serviceId) {
-  const ses = session.fromPartition(`persist:ms-${serviceId}`);
+  const ses = session.fromPartition(`persist:${partitionName(serviceId)}`);
   setupSession(ses, serviceId);
   return ses;
 }
@@ -384,6 +401,7 @@ function createMainWindow() {
     }
   });
   if (store.get('maximized')) win.maximize();
+  applyTaskbarIdentity();
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
   win.removeMenu();
 
@@ -411,6 +429,8 @@ function createMainWindow() {
   });
   win.on('focus', () => {
     win.flashFrame(false);
+    const at = activeTab();
+    if (at && at.view && !locked) { try { at.view.webContents.invalidate(); } catch {} }
     const wc = activeWc();
     if (wc && !findOpen) wc.focus();
   });
@@ -464,6 +484,32 @@ function createMainWindow() {
       quitApp();
     }
   });
+}
+
+// Faz o ícone fixado na barra de tarefas e a janela aberta serem o MESMO ícone.
+// No portátil, o .exe que roda é uma cópia temporária; aqui dizemos ao Windows qual .exe relançar.
+function applyTaskbarIdentity() {
+  if (process.platform !== 'win32') return;
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  try {
+    win.setAppDetails({
+      appId: 'com.buno.multisocial',
+      appIconPath: exe,
+      appIconIndex: 0,
+      relaunchCommand: `"${exe}"`,
+      relaunchDisplayName: 'MultiSocial'
+    });
+  } catch (e) { log('setAppDetails falhou', String(e)); }
+  // atalho no Menu Iniciar com o mesmo ID (o instalador já cria o dele)
+  if (process.env.PORTABLE_EXECUTABLE_FILE) {
+    try {
+      const lnk = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'MultiSocial.lnk');
+      const opts = { target: exe, appUserModelId: 'com.buno.multisocial', icon: exe, iconIndex: 0, description: 'MultiSocial' };
+      let same = false;
+      try { const cur = shell.readShortcutLink(lnk); same = cur.target === exe && cur.appUserModelId === 'com.buno.multisocial'; } catch {}
+      if (!same) shell.writeShortcutLink(lnk, fs.existsSync(lnk) ? 'replace' : 'create', opts);
+    } catch (e) { log('atalho do Menu Iniciar falhou', String(e)); }
+  }
 }
 
 function showMain() {
@@ -599,6 +645,22 @@ function ensureView(tab) {
   });
   view.webContents.loadURL(tab.url || svc.url).catch(() => {});
   return view;
+}
+
+// Fecha e recria a página da aba do zero (corrige página travada ou em branco)
+function recreateTab(tab) {
+  if (!tab || tab.type !== 'service') return;
+  tab.url = tabUrl(tab);
+  if (tab.view) {
+    const v = tab.view;
+    tab.view = null;
+    try { win.contentView.removeChildView(v); } catch {}
+    try { v.webContents.close(); } catch {}
+  }
+  log('aba recriada', tab.serviceId);
+  ensureView(tab);
+  layout();
+  sendTabs();
 }
 
 // Suspende a aba: fecha a página (libera a RAM) mas mantém a aba na barra
@@ -865,6 +927,7 @@ function openWindow(url, serviceId, opts = {}) {
     webPreferences: { session: ses, preload: WEB_PRELOAD, contextIsolation: true, sandbox: true, spellcheck: true }
   });
   w.removeMenu();
+  w.__serviceId = serviceId;
   if (opts.mini) w.setAlwaysOnTop(true, 'floating');
   wireWebContents(w.webContents, { serviceId, win: w });
   w.loadURL(url).catch(() => {});
@@ -922,6 +985,7 @@ function wireWebContents(wc, ctx) {
   });
   wc.on('did-create-window', (child) => {
     child.removeMenu();
+    child.__serviceId = ctx.serviceId;
     wireWebContents(child.webContents, { serviceId: ctx.serviceId, win: child });
   });
 
@@ -953,8 +1017,15 @@ function wireWebContents(wc, ctx) {
         sendTabs();
       }
     });
-    wc.on('did-start-loading', () => { tab.loading = true; sendTabs(); });
-    wc.on('did-stop-loading', () => { tab.loading = false; sendTabs(); });
+    wc.on('did-start-loading', () => { tab.loading = true; tab.loadStart = Date.now(); sendTabs(); });
+    wc.on('did-stop-loading', () => {
+      tab.loading = false;
+      tab.loadStart = 0;
+      tab.stuckRetries = 0;
+      sendTabs();
+      // ao terminar de carregar a aba visível, força um redesenho (contorno do bug de tela em branco)
+      if (tab.id === activeId && !locked) { tab.shown = false; layout(); }
+    });
     wc.on('did-navigate', sendTabs);
     wc.on('did-navigate-in-page', sendTabs);
     wc.on('audio-state-changed', (e) => { tab.audible = e.audible; sendTabs(); });
@@ -1395,6 +1466,7 @@ function tabMenu(id) {
     { label: mem ? `Memória: ${mem} MB` : 'Memória: —', enabled: false },
     { type: 'separator' },
     { label: 'Recarregar', click: () => wc.reload() },
+    { label: 'Recriar aba (corrige página travada/em branco)', click: () => recreateTab(t) },
     { label: 'Duplicar aba', click: () => createServiceTab(t.serviceId, wc.getURL(), { afterId: t.id }) },
     { label: 'Voltar ao início da rede', click: () => wc.loadURL(svc.url) },
     { type: 'separator' },
@@ -1449,24 +1521,71 @@ function homeMenu(serviceId) {
   ]).popup({ window: win });
 }
 
+// Apaga TUDO de uma rede: cookies, logins, armazenamento local, IndexedDB, cache, service workers,
+// e depois apaga a pasta do disco (sem passar pela Lixeira).
+async function wipeService(serviceId) {
+  const svc = getService(serviceId);
+  const oldName = partitionName(serviceId);
+  const oldSes = session.fromPartition(`persist:${oldName}`);
+  // fecha janelas extras dessa rede
+  for (const w of BrowserWindow.getAllWindows()) if (w !== win && w.__serviceId === serviceId) { try { w.destroy(); } catch {} }
+  // fecha as páginas das abas dessa rede (as abas continuam na barra)
+  const affected = tabs.filter((x) => x.serviceId === serviceId);
+  for (const t of affected) {
+    t.url = svc ? svc.url : t.url;
+    t.badge = 0;
+    t.favicon = '';
+    if (t.view) {
+      const v = t.view;
+      t.view = null;
+      try { win.contentView.removeChildView(v); } catch {}
+      try { v.webContents.close(); } catch {}
+    }
+  }
+  try { await oldSes.clearStorageData(); } catch {}
+  try { await oldSes.clearCache(); } catch {}
+  try { await oldSes.clearAuthCache(); } catch {}
+  try { await oldSes.clearCodeCaches({}); } catch {}
+  try { await oldSes.clearHostResolverCache(); } catch {}
+  try { for (const w of await oldSes.listWordsInSpellCheckerDictionary()) oldSes.removeWordFromSpellCheckerDictionary(w); } catch {}
+  try { await oldSes.cookies.flushStore(); } catch {}
+  // próxima geração = pasta nova e vazia
+  const gen = { ...(store.get('gen') || {}) };
+  gen[serviceId] = (gen[serviceId] || 0) + 1;
+  store.set('gen', gen);
+  // tenta apagar a pasta agora; o que estiver em uso é apagado na próxima abertura do app
+  // a sessão antiga ainda pode gravar arquivos vazios ao fechar o app: apaga de novo na próxima abertura
+  wipeDir(path.join(PARTITIONS_DIR, oldName));
+  store.set('pendingWipe', [...new Set([...(store.get('pendingWipe') || []), oldName])]);
+  // remove dados ligados à rede guardados nas configurações
+  for (const k of ['favicons', 'perms', 'zoom']) {
+    const o = { ...(store.get(k) || {}) };
+    delete o[serviceId];
+    store.set(k, o);
+  }
+  store.saveNow();
+  // reabre as abas já com a sessão nova (deslogada)
+  for (const t of affected) if (t.id === activeId) ensureView(t);
+  layout();
+  sendTabs();
+  sendConfig();
+  log('dados da rede apagados', serviceId);
+}
+
 async function logout(serviceId) {
   const svc = getService(serviceId);
   const r = await dialog.showMessageBox(win, {
     type: 'warning',
     title: 'Sair da conta',
     message: `Sair da conta do ${svc ? svc.name : serviceId}?`,
-    detail: 'Todos os dados de login, cookies e cache desta rede serão apagados deste computador.',
+    detail: 'Todos os dados desta rede (login, cookies, mensagens em cache, armazenamento local e cache) serão apagados permanentemente deste computador, sem passar pela Lixeira.',
     buttons: ['Sair da conta', 'Cancelar'],
     defaultId: 1,
     cancelId: 1,
     noLink: true
   });
   if (r.response !== 0) return;
-  const ses = getSession(serviceId);
-  await ses.clearStorageData();
-  await ses.clearCache();
-  await ses.clearAuthCache().catch(() => {});
-  for (const t of tabs.filter((x) => x.serviceId === serviceId)) { t.url = svc.url; if (t.view) t.view.webContents.loadURL(svc.url); }
+  await wipeService(serviceId);
 }
 
 function removeCustom(serviceId) {
@@ -1864,17 +1983,35 @@ function registerIpc() {
   ipcMain.on('ui:find-close', () => closeFind());
   ipcMain.on('ui:clear-all', async () => {
     const r = await dialog.showMessageBox(win, {
-      type: 'warning', message: 'Sair de TODAS as contas e limpar todos os dados?',
-      detail: 'Logins, cookies e cache de todas as redes serão apagados.', buttons: ['Limpar tudo', 'Cancelar'], defaultId: 1, cancelId: 1, noLink: true
+      type: 'warning', message: 'Sair de TODAS as contas e apagar todos os dados?',
+      detail: 'Serão apagados permanentemente deste computador (sem passar pela Lixeira): logins, cookies, armazenamento local, cache, '
+        + 'permissões, zoom, logos salvas, abas salvas, dicionário pessoal e o log de diagnóstico de TODAS as redes.\n\nO app reinicia ao terminar.',
+      buttons: ['Apagar tudo', 'Cancelar'], defaultId: 1, cancelId: 1, noLink: true
     });
     if (r.response !== 0) return;
+    for (const t of [...tabs]) closeTab(t.id);
+    closedStack.length = 0;
     for (const s of allServices()) {
-      const ses = getSession(s.id);
-      await ses.clearStorageData();
-      await ses.clearCache();
+      // só mexe nas redes que já têm dados no disco (evita criar pastas à toa)
+      if (fs.existsSync(path.join(PARTITIONS_DIR, partitionName(s.id)))) await wipeService(s.id);
     }
-    for (const t of tabs.filter((x) => x.view)) t.view.webContents.loadURL(getService(t.serviceId).url);
-    store.set('favicons', {});
+    // qualquer outra pasta de sessão que tenha sobrado (versões antigas, sites removidos)
+    try {
+      for (const name of fs.readdirSync(PARTITIONS_DIR)) {
+        if (!wipeDir(path.join(PARTITIONS_DIR, name))) store.set('pendingWipe', [...new Set([...(store.get('pendingWipe') || []), name])]);
+      }
+    } catch {}
+    try { await session.defaultSession.clearStorageData(); await session.defaultSession.clearCache(); } catch {}
+    for (const k of ['favicons', 'perms', 'zoom', 'icons']) store.set(k, {});
+    store.set('lastTabs', []);
+    store.set('iconsFetchedAt', 0);
+    downloads.length = 0;
+    try { fs.rmSync(LOG_DIR, { recursive: true, force: true }); } catch {}
+    store.saveNow();
+    // reinicia para soltar os arquivos em uso; o que sobrou é apagado na abertura
+    app.relaunch();
+    quitting = true;
+    app.exit(0);
   });
   ipcMain.on('ui:check-updates', () => checkForUpdates(true));
   ipcMain.on('ui:external', (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
@@ -1896,6 +2033,7 @@ app.on('before-quit', () => { quitting = true; saveTabs(); store.saveNow(); });
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
 app.whenReady().then(() => {
+  wipePending();
   Menu.setApplicationMenu(null);
   registerIpc();
   createMainWindow();
@@ -1929,6 +2067,30 @@ app.whenReady().then(() => {
   }
 
   setInterval(hibernateTick, 60000);
+  // vigia: se a aba visível ficar mais de 30s "carregando", recarrega (até 2 vezes)
+  setInterval(() => {
+    const t = activeTab();
+    if (!t || !t.view || !t.loading || !t.loadStart || locked) return;
+    if (Date.now() - t.loadStart > 30000 && (t.stuckRetries || 0) < 2) {
+      t.stuckRetries = (t.stuckRetries || 0) + 1;
+      log('aba travada carregando, recarregando', t.serviceId, t.stuckRetries);
+      try { t.view.webContents.reloadIgnoringCache(); } catch {}
+    }
+  }, 5000);
+  // PC voltou da suspensão / rede voltou: recarrega abas que ficaram na tela de erro
+  const recoverAll = (why) => {
+    log('recuperando abas:', why);
+    for (const t of tabs) {
+      if (!t.view) continue;
+      const u = t.view.webContents.getURL();
+      if (u.startsWith('data:') || t.view.webContents.isCrashed()) {
+        try { t.view.webContents.loadURL(tabUrl(t) || (getService(t.serviceId) || {}).url); } catch {}
+      }
+    }
+    const at = activeTab(); if (at) at.shown = false; layout();
+  };
+  powerMonitor.on('resume', () => setTimeout(() => recoverAll('PC retomou da suspensão'), 3000));
+  powerMonitor.on('unlock-screen', () => recoverAll('tela do Windows desbloqueada'));
   // bloqueio automático por inatividade do PC
   setInterval(() => {
     const min = Number(store.get('autoLockMinutes')) || 0;
