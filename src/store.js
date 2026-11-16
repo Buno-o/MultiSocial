@@ -20,6 +20,20 @@ const DEFAULTS = {
   theme: 'dark',              // 'dark' | 'light'
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
+  order: [],                  // ordem dos ícones no início (drag & drop)
+  externalLinks: true,        // links para outros sites abrem no navegador padrão
+  suspendMinutes: 15,         // suspende abas inativas (0 = nunca) para economizar RAM
+  lazyTabs: true,             // abas restauradas só carregam quando abertas
+  alive: {},                  // por rede: true = nunca suspender
+  mobile: {},                 // por rede: true = modo celular
+  icons: {},                  // logos buscadas dos sites
+  iconsFetchedAt: 0,
+  faviconsV: 0,
+  pinHash: '',                // PIN (scrypt)
+  pinSalt: '',
+  lockOnStart: true,
+  lockOnHide: false,
+  autoLockMinutes: 0,
   bgPlay: {},                 // por rede: true = continua tocando em 2º plano (sobrepõe o padrão)
   disablePasskeys: true,      // bloqueia popup de chave de acesso/pendrive
   perms: {},                  // permissões lembradas por rede        // pausar vídeos ao trocar de aba

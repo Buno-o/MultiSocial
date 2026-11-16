@@ -16,14 +16,21 @@
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>
     <div class="drag"></div>
+    <button id="browser-btn" class="tb-btn" title="Nova guia no navegador padrão">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>
+    </button>
+    <button id="mobile-btn" class="tb-btn" title="Modo celular neste site" disabled>
+      <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg>
+    </button>
     <div id="nav" class="hidden">
-      <button class="tb-btn" data-nav="back" title="Voltar (Alt+←)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
-      <button class="tb-btn" data-nav="forward" title="Avançar (Alt+→)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       <button class="tb-btn" data-nav="reload" title="Recarregar (Ctrl+R)"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg></button>
     </div>
     <button id="dl-btn" class="tb-btn" title="Downloads">
       <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"/></svg>
       <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/></svg>
+    </button>
+    <button id="lock-btn" class="tb-btn" title="Bloquear com PIN">
+      <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
     </button>
     <button id="settings-btn" class="tb-btn" title="Configurações (Ctrl+,)">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -79,6 +86,38 @@
       </section>
 
       <section>
+        <h2>Links</h2>
+        <label class="row"><span><b>Abrir links no navegador padrão</b><small>Links para outros sites e links de "nova aba" abrem no seu navegador. A navegação dentro da própria rede continua no app.</small></span><input type="checkbox" class="switch" id="set-externalLinks"></label>
+      </section>
+
+      <section>
+        <h2>Desempenho e memória</h2>
+        <label class="row">
+          <span><b>Suspender abas inativas</b><small>Fecha a página de abas sem uso para liberar RAM (a aba continua na barra e recarrega ao abrir). Mensageiros e abas tocando som nunca são suspensos.</small></span>
+          <select id="set-suspendMinutes">
+            <option value="0">Nunca</option><option value="5">Após 5 minutos</option><option value="15">Após 15 minutos</option>
+            <option value="30">Após 30 minutos</option><option value="60">Após 1 hora</option>
+          </select>
+        </label>
+        <label class="row"><span><b>Carregar abas só quando abertas</b><small>Ao iniciar, as abas restauradas só carregam quando você clicar nelas (exceto mensageiros).</small></span><input type="checkbox" class="switch" id="set-lazyTabs"></label>
+        <div class="row"><span><b>Uso de memória</b><small id="mem-info">—</small></span><button class="btn" id="mem-refresh">Atualizar</button></div>
+      </section>
+
+      <section>
+        <h2>Bloqueio por PIN</h2>
+        <div class="row"><span><b>PIN de acesso</b><small id="pin-status">Nenhum PIN definido.</small></span><span class="btns"><button class="btn primary" id="pin-set">Definir PIN</button><button class="btn danger" id="pin-remove">Remover</button></span></div>
+        <label class="row"><span><b>Bloquear ao abrir o app</b></span><input type="checkbox" class="switch" id="set-lockOnStart"></label>
+        <label class="row"><span><b>Bloquear ao minimizar ou ir para a bandeja</b></span><input type="checkbox" class="switch" id="set-lockOnHide"></label>
+        <label class="row">
+          <span><b>Bloquear após o PC ficar inativo</b></span>
+          <select id="set-autoLockMinutes">
+            <option value="0">Nunca</option><option value="1">1 minuto</option><option value="5">5 minutos</option>
+            <option value="15">15 minutos</option><option value="30">30 minutos</option>
+          </select>
+        </label>
+      </section>
+
+      <section>
         <h2>Notificações</h2>
         <label class="row"><span><b>Permitir notificações das redes</b><small>Mensagens do WhatsApp, Telegram, Instagram etc.</small></span><input type="checkbox" class="switch" id="set-notifications"></label>
         <label class="row"><span><b>Piscar a barra de tarefas</b><small>Quando chegar mensagem nova com a janela em segundo plano.</small></span><input type="checkbox" class="switch" id="set-flashTaskbar"></label>
@@ -107,7 +146,7 @@
 
       <section>
         <h2>Redes sociais</h2>
-        <p class="muted"><b>2º plano</b>: continua tocando vídeo/live quando você troca de aba ou minimiza (as outras pausam). <b>Início</b>: mostra a rede no menu inicial. <b>Sair</b> apaga o login daquela rede neste PC.</p>
+        <p class="muted"><b>Ativa</b>: nunca é suspensa para economizar RAM. <b>2º plano</b>: continua tocando vídeo/live quando você troca de aba ou minimiza (as outras pausam). <b>Início</b>: mostra a rede no menu inicial. <b>Sair</b> apaga o login daquela rede neste PC.</p>
         <div id="svc-list" class="svc-list"></div>
         <form id="custom-form" class="custom-form">
           <b>Adicionar site personalizado</b>
@@ -169,6 +208,17 @@
   </main>
 
   <main id="web-bg" class="page hidden"><div class="spinner"></div></main>
+
+  <!-- Tela de bloqueio -->
+  <div id="lockscreen" class="hidden">
+    <div class="lock-card">
+      <div class="lock-icon"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+      <h2>MultiSocial bloqueado</h2>
+      <p>Digite seu PIN para continuar</p>
+      <form id="unlock-form"><input id="unlock-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="••••"></form>
+      <small id="unlock-error"></small>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

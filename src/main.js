@@ -1,9 +1,10 @@
 // MultiSocial — processo principal
 const {
   app, BrowserWindow, WebContentsView, ipcMain, Menu, Tray, dialog, shell,
-  session, nativeImage, Notification, clipboard, net
+  session, nativeImage, Notification, clipboard, net, powerMonitor
 } = require('electron');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const SERVICES = require('./services');
@@ -80,6 +81,62 @@ function allServices() {
 function getService(id) {
   return allServices().find((s) => s.id === id);
 }
+// ---- domínios: o que é "da rede" e o que deve abrir no navegador padrão
+const MULTI_TLD = new Set(['com', 'net', 'org', 'co', 'gov', 'edu', 'ac', 'or', 'ne']);
+function baseDomain(host) {
+  const parts = String(host || '').toLowerCase().split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  const n = parts.length;
+  if (parts[n - 1].length === 2 && MULTI_TLD.has(parts[n - 2])) return parts.slice(-3).join('.');
+  return parts.slice(-2).join('.');
+}
+// páginas de login de terceiros que precisam continuar dentro do app
+const AUTH_HOSTS = ['accounts.google.com', 'accounts.youtube.com', 'appleid.apple.com', 'login.live.com',
+  'login.microsoftonline.com', 'account.live.com', 'auth.openai.com', 'challenges.cloudflare.com', 'github.com'];
+const AUTH_PATHS = [['facebook.com', '/dialog/'], ['facebook.com', '/login'], ['x.com', '/i/oauth2'], ['twitter.com', '/i/oauth2'],
+  ['discord.com', '/oauth2'], ['google.com', '/signin'], ['google.com', '/o/oauth2']];
+function serviceDomains(serviceId) {
+  const svc = getService(serviceId);
+  if (!svc) return [];
+  const list = new Set((svc.domains || []).map((d) => d.toLowerCase()));
+  try { list.add(baseDomain(new URL(svc.url).hostname)); } catch {}
+  return [...list];
+}
+function isInternal(serviceId, url) {
+  let u;
+  try { u = new URL(url); } catch { return true; }
+  if (!/^https?:$/.test(u.protocol)) return true;
+  const host = u.hostname.toLowerCase();
+  if (AUTH_HOSTS.includes(host)) return true;
+  const base = baseDomain(host);
+  if (AUTH_PATHS.some(([d, p]) => base === d && u.pathname.startsWith(p))) return true;
+  return serviceDomains(serviceId).some((d) => host === d || host.endsWith('.' + d));
+}
+// desembrulha links "l.facebook.com/l.php?u=...", "google.com/url?q=..." etc.
+function unwrapLink(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname;
+    if (/^(l|lm)\.(facebook|instagram|messenger)\.com$/.test(h) || (/(^|\.)google\.[a-z.]+$/.test(h) && u.pathname === '/url') ||
+        (/youtube\.com$/.test(h) && u.pathname === '/redirect') || h === 'out.reddit.com' || h === 'href.li') {
+      const t = u.searchParams.get('u') || u.searchParams.get('q') || u.searchParams.get('url') || u.searchParams.get('target');
+      if (t && /^https?:/i.test(t)) return t;
+    }
+  } catch {}
+  return url;
+}
+function openInBrowser(url) {
+  const t = unwrapLink(url);
+  shell.openExternal(t).catch(() => {});
+}
+function tabUrl(t) {
+  if (t.view && !t.view.webContents.isDestroyed()) {
+    const u = t.view.webContents.getURL();
+    if (/^https?:/i.test(u)) return u;
+  }
+  return t.url || '';
+}
+
 function getSession(serviceId) {
   const ses = session.fromPartition(`persist:ms-${serviceId}`);
   setupSession(ses, serviceId);
@@ -335,8 +392,8 @@ function createMainWindow() {
 
   win.on('resize', layout);
   // janela minimizada ou na bandeja também conta como "segundo plano"
-  win.on('minimize', () => pauseIfNotBg(activeTab()));
-  win.on('hide', () => pauseIfNotBg(activeTab()));
+  win.on('minimize', () => { pauseIfNotBg(activeTab()); if (hasPin() && store.get('lockOnHide')) lockApp(); });
+  win.on('hide', () => { pauseIfNotBg(activeTab()); if (hasPin() && store.get('lockOnHide')) lockApp(); });
   // ao voltar da bandeja/minimizado, força o redesenho da aba atual
   const redraw = () => { const t = activeTab(); if (t) t.shown = false; layout(); };
   win.on('show', redraw);
@@ -429,8 +486,10 @@ function layout() {
   const top = fullscreenTab ? 0 : TAB_H + (findOpen ? FIND_H : 0);
   for (const t of tabs) {
     if (!t.view) continue;
-    if (t.id === activeId) {
-      const bounds = { x: 0, y: top, width: w, height: Math.max(0, h - top) };
+    if (t.id === activeId && !locked) {
+      const mob = isMobile(t.serviceId) && !fullscreenTab;
+      const vw = mob ? Math.min(w, 430) : w;
+      const bounds = { x: Math.floor((w - vw) / 2), y: top, width: vw, height: Math.max(0, h - top) };
       if (!t.shown) {
         // Contorno de bug do Electron: uma aba que ficou oculta pode voltar em branco
         // até a janela ser redimensionada. Mostramos com 1px a menos e corrigimos em seguida.
@@ -465,14 +524,16 @@ function tabInfo(t) {
     serviceId: t.serviceId,
     name: t.type === 'settings' ? 'Configurações' : (svc ? svc.name : 'Aba'),
     title: t.title || '',
-    favicon: t.favicon || (t.serviceId && store.get('favicons')[t.serviceId]) || (svc && svc.icon) || '',
+    favicon: t.favicon || (t.serviceId && serviceIcon(t.serviceId)) || '',
     badge: t.badge || 0,
     loading: !!t.loading,
     muted: !!t.muted,
     audible: !!t.audible,
-    url: t.view ? t.view.webContents.getURL() : '',
+    url: t.type === 'service' ? tabUrl(t) : '',
     canBack: t.view ? t.view.webContents.navigationHistory.canGoBack() : false,
     canForward: t.view ? t.view.webContents.navigationHistory.canGoForward() : false,
+    suspended: t.type === 'service' && !t.view,
+    mobile: t.type === 'service' && isMobile(t.serviceId),
     color: svc ? svc.color : null,
     glyph: svc ? svc.glyph : '',
     dark: svc ? !!svc.dark : false
@@ -492,13 +553,27 @@ function sendTabs() {
 function saveTabs() {
   store.set('lastTabs', tabs.filter((t) => t.type === 'service').map((t) => ({
     serviceId: t.serviceId,
-    url: t.view && /^https?:/i.test(t.view.webContents.getURL()) ? t.view.webContents.getURL() : ''
+    url: tabUrl(t)
   })));
 }
 
 function createServiceTab(serviceId, url, opts = {}) {
   const svc = getService(serviceId);
   if (!svc) return null;
+  const tab = { id: nextTabId++, type: 'service', serviceId, view: null, url: url || svc.url, title: svc.name, favicon: '', badge: 0, loading: false, lastActive: Date.now() };
+  const idx = opts.afterId ? tabs.findIndex((t) => t.id === opts.afterId) + 1 : tabs.length;
+  tabs.splice(idx > 0 ? idx : tabs.length, 0, tab);
+  // lazy: só cria a página quando a aba for aberta (economiza RAM e acelera a abertura do app)
+  if (!opts.lazy || opts.activate !== false) ensureView(tab);
+  if (opts.activate !== false) activateTab(tab.id);
+  else { layout(); sendTabs(); }
+  return tab;
+}
+
+function ensureView(tab) {
+  if (tab.view) return tab.view;
+  const svc = getService(tab.serviceId);
+  const serviceId = tab.serviceId;
   const ses = getSession(serviceId);
   const view = new WebContentsView({
     webPreferences: {
@@ -510,21 +585,115 @@ function createServiceTab(serviceId, url, opts = {}) {
     }
   });
   view.setBackgroundColor('#ffffff');
-  const tab = { id: nextTabId++, type: 'service', serviceId, view, title: svc.name, favicon: '', badge: 0, loading: true };
-  const idx = opts.afterId ? tabs.findIndex((t) => t.id === opts.afterId) + 1 : tabs.length;
-  tabs.splice(idx > 0 ? idx : tabs.length, 0, tab);
-
+  tab.view = view;
+  tab.loading = true;
+  tab.shown = false;
   view.setVisible(false);
   win.contentView.addChildView(view);
   wireWebContents(view.webContents, { serviceId, tab });
+  applyUserAgent(view.webContents, serviceId);
 
-  const zoom = (store.get('zoom') || {})[serviceId];
-  view.webContents.on('did-finish-load', () => { if (zoom) view.webContents.setZoomFactor(zoom); });
-  view.webContents.loadURL(url || svc.url).catch(() => {});
+  view.webContents.on('did-finish-load', () => {
+    const zoom = (store.get('zoom') || {})[serviceId];
+    if (zoom) view.webContents.setZoomFactor(zoom);
+  });
+  view.webContents.loadURL(tab.url || svc.url).catch(() => {});
+  return view;
+}
 
-  if (opts.activate !== false) activateTab(tab.id);
-  else { layout(); sendTabs(); }
-  return tab;
+// Suspende a aba: fecha a página (libera a RAM) mas mantém a aba na barra
+function suspendTab(tab) {
+  if (!tab.view || tab.id === activeId) return;
+  tab.url = tabUrl(tab);
+  const v = tab.view;
+  tab.view = null;
+  tab.loading = false;
+  tab.audible = false;
+  try { win.contentView.removeChildView(v); } catch {}
+  try { v.webContents.close(); } catch {}
+  log('aba suspensa', tab.serviceId);
+  sendTabs();
+}
+function keepAlive(serviceId) {
+  const o = (store.get('alive') || {})[serviceId];
+  if (o === true || o === false) return o;
+  const svc = getService(serviceId);
+  return !!(svc && svc.alive);
+}
+function hibernateTick() {
+  const min = Number(store.get('suspendMinutes')) || 0;
+  if (!min) return;
+  const now = Date.now();
+  for (const t of tabs) {
+    if (t.type !== 'service' || !t.view || t.id === activeId) continue;
+    if (keepAlive(t.serviceId) || t.audible) continue;
+    if (now - (t.lastActive || now) > min * 60000) suspendTab(t);
+  }
+}
+
+// ---- modo celular
+function isMobile(serviceId) { return !!(store.get('mobile') || {})[serviceId]; }
+const MOBILE_UA = `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Mobile Safari/537.36`;
+function applyUserAgent(wc, serviceId) {
+  const svc = getService(serviceId);
+  wc.setUserAgent(isMobile(serviceId) ? MOBILE_UA : (svc && svc.ua === 'firefox' ? FF_UA : UA));
+}
+function toggleMobile(serviceId) {
+  if (!serviceId) return;
+  const m = { ...(store.get('mobile') || {}) };
+  m[serviceId] = !m[serviceId];
+  if (!m[serviceId]) delete m[serviceId];
+  store.set('mobile', m);
+  for (const t of tabs.filter((x) => x.serviceId === serviceId && x.view)) {
+    applyUserAgent(t.view.webContents, serviceId);
+    t.view.webContents.reload();
+  }
+  layout();
+  sendTabs();
+}
+
+// ---- abrir uma nova guia no navegador padrão do sistema
+function openBrowserNewTab() {
+  const fallback = () => shell.openExternal('https://www.google.com/').catch(() => {});
+  if (process.platform !== 'win32') return fallback();
+  execFile('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice', '/v', 'ProgId'], { windowsHide: true }, (err, out) => {
+    const progId = !err && (/ProgId\s+REG_SZ\s+(\S+)/i.exec(out) || [])[1];
+    if (!progId) return fallback();
+    execFile('reg', ['query', `HKCR\\${progId}\\shell\\open\\command`, '/ve'], { windowsHide: true }, (e2, o2) => {
+      const cmd = !e2 && ((/REG_(?:EXPAND_)?SZ\s+(.+)/i.exec(o2) || [])[1] || '').trim();
+      const exe = cmd && ((/^"([^"]+)"/.exec(cmd) || [])[1] || cmd.split(/\s+/)[0]);
+      if (!exe || !fs.existsSync(exe)) return fallback();
+      const name = path.basename(exe).toLowerCase();
+      let args = [];
+      if (name.includes('firefox') || name.includes('librewolf') || name.includes('waterfox') || name.includes('zen')) args = ['-new-tab', 'about:newtab'];
+      else if (name.includes('msedge')) args = ['edge://newtab'];
+      else if (/chrome|brave|vivaldi|chromium|thorium|yandex|cent/.test(name)) args = ['chrome://newtab'];
+      try {
+        spawn(exe, args, { detached: true, stdio: 'ignore' }).unref();
+      } catch { fallback(); }
+    });
+  });
+}
+
+// ---- logo de cada rede (busca a logo no próprio site; evita ficar com a logo do Google)
+function serviceIcon(serviceId) {
+  const svc = getService(serviceId);
+  if (!svc) return '';
+  return svc.icon || (store.get('icons') || {})[serviceId] || (store.get('favicons') || {})[serviceId] || '';
+}
+async function refreshServiceIcons(force) {
+  const week = 7 * 864e5;
+  if (!force && Date.now() - (store.get('iconsFetchedAt') || 0) < week) {
+    const icons = store.get('icons') || {};
+    if (SERVICES.every((s) => s.icon || icons[s.id])) return;
+  }
+  const icons = { ...(store.get('icons') || {}) };
+  for (const s of SERVICES) {
+    if (s.icon || (!force && icons[s.id])) continue;
+    const r = await fetchSiteIconChecked(s.url, s.id);
+    if (r) { icons[s.id] = r; store.set('icons', { ...icons }); sendConfig(); }
+  }
+  store.set('iconsFetchedAt', Date.now());
 }
 
 function openSettingsTab() {
@@ -568,13 +737,15 @@ function pauseIfNotBg(t) {
 function activateTab(id) {
   if (id !== 'home' && !tabs.find((t) => t.id === id)) id = 'home';
   const prev = activeTab();
-  if (prev && prev.id !== id) pauseIfNotBg(prev);
+  if (prev && prev.id !== id) { pauseIfNotBg(prev); prev.lastActive = Date.now(); }
+  const next = tabs.find((t) => t.id === id);
+  if (next && next.type === 'service') { next.lastActive = Date.now(); ensureView(next); }
   if (findOpen) closeFind();
   activeId = id;
   layout();
   const t = activeTab();
   if (t && t.view && t.view.webContents.isCrashed()) { log('aba travada ao ativar, recarregando', t.serviceId); t.view.webContents.reload(); }
-  if (t && t.view) t.view.webContents.focus();
+  if (t && t.view && !locked) t.view.webContents.focus();
   else if (win) win.webContents.focus();
   sendTabs();
 }
@@ -584,8 +755,7 @@ function closeTab(id) {
   if (idx < 0) return;
   const t = tabs[idx];
   if (t.type === 'service') {
-    const u = t.view.webContents.getURL();
-    closedStack.push({ serviceId: t.serviceId, url: /^https?:/i.test(u) ? u : '' });
+    closedStack.push({ serviceId: t.serviceId, url: tabUrl(t) });
     if (closedStack.length > 20) closedStack.shift();
   }
   tabs.splice(idx, 1);
@@ -620,8 +790,8 @@ function goToIndex(n) {
 }
 
 function moveTabToWindow(t) {
-  if (!t || !t.view) return;
-  const url = t.view.webContents.getURL();
+  if (!t || t.type !== 'service') return;
+  const url = tabUrl(t);
   const sid = t.serviceId;
   closeTab(t.id);
   closedStack.pop();
@@ -670,6 +840,7 @@ function rebuildTrayMenu() {
     { label: 'Abrir MultiSocial', click: showMain },
     { type: 'separator' },
     ...(open.length ? [...open, { type: 'separator' }] : []),
+    ...(hasPin() ? [{ label: locked ? 'Bloqueado' : 'Bloquear agora', enabled: !locked, click: lockApp }] : []),
     { label: 'Configurações', click: () => { showMain(); openSettingsTab(); } },
     { label: 'Verificar atualizações', click: () => { showMain(); checkForUpdates(true); } },
     { label: 'Sair', click: quitApp }
@@ -712,6 +883,10 @@ function wireWebContents(wc, ctx) {
       return { action: 'deny' };
     }
     // pop-ups de login (OAuth etc.) continuam como janela filha
+    if (disposition === 'new-window' && (isInternal(ctx.serviceId, url) || /^about:blank/i.test(url))) {
+      return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON, width: 620, height: 760 } };
+    }
+    if (store.get('externalLinks') !== false) { openInBrowser(url); return { action: 'deny' }; }
     if (disposition === 'new-window') {
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON, width: 620, height: 760 } };
     }
@@ -719,6 +894,25 @@ function wireWebContents(wc, ctx) {
     else openWindow(url, ctx.serviceId);
     return { action: 'deny' };
   });
+  // links para outros sites (mesma aba) -> navegador padrão
+  const leaving = (e, url, isMainFrame) => {
+    if (isMainFrame === false || store.get('externalLinks') === false) return;
+    if (!/^https?:/i.test(url) || isInternal(ctx.serviceId, url)) {
+      const real = unwrapLink(url);
+      if (real !== url && !isInternal(ctx.serviceId, real)) { e.preventDefault(); openInBrowser(real); }
+      return;
+    }
+    e.preventDefault();
+    openInBrowser(url);
+  };
+  wc.on('will-navigate', (e) => leaving(e, e.url, e.isMainFrame));
+  wc.on('will-redirect', (e) => { if (e.isMainFrame && !e.isSameDocument) leaving(e, e.url, true); });
+  const pushNav = () => {
+    try { wc.send('ms:nav', { back: wc.navigationHistory.canGoBack(), forward: wc.navigationHistory.canGoForward() }); } catch {}
+  };
+  wc.on('did-navigate', pushNav);
+  wc.on('did-navigate-in-page', pushNav);
+  wc.on('dom-ready', pushNav);
   wc.on('will-attach-webview', (e) => e.preventDefault());
   wc.on('will-navigate', (e, url) => {
     if (!/^(https?:|about:|data:text\/html)/i.test(url)) {
@@ -751,7 +945,8 @@ function wireWebContents(wc, ctx) {
       sendTabs();
     });
     wc.on('page-favicon-updated', (_e, favs) => {
-      if (favs && favs.length) {
+      // só guarda a logo se a página for da própria rede (evita a logo do Google na tela de login)
+      if (favs && favs.length && isInternal(tab.serviceId, wc.getURL()) && !AUTH_HOSTS.includes((() => { try { return new URL(wc.getURL()).hostname; } catch { return ''; } })())) {
         tab.favicon = favs[0];
         const f = store.get('favicons') || {};
         if (f[tab.serviceId] !== favs[0]) { f[tab.serviceId] = favs[0]; store.set('favicons', f); sendConfig(); }
@@ -834,6 +1029,11 @@ function setZoom(wc, delta, serviceId, reset) {
 function handleShortcut(input, ctx = null) {
   if (input.type !== 'keyDown') return false;
   const ctrl = input.control || input.meta;
+  if (locked) {
+    // bloqueado: só deixa digitar o PIN na tela de bloqueio
+    if (ctx) return true;
+    return ctrl || input.alt || /^F\d+$/.test(input.key || '');
+  }
   const shift = input.shift;
   const alt = input.alt;
   const key = (input.key || '').toLowerCase();
@@ -1188,9 +1388,12 @@ function tabMenu(id) {
     Menu.buildFromTemplate([{ label: 'Fechar', click: () => closeTab(id) }]).popup({ window: win });
     return;
   }
-  const wc = t.view.webContents;
+  const wc = ensureView(t).webContents;
   const svc = getService(t.serviceId);
+  const mem = memoryOf(wc);
   Menu.buildFromTemplate([
+    { label: mem ? `Memória: ${mem} MB` : 'Memória: —', enabled: false },
+    { type: 'separator' },
     { label: 'Recarregar', click: () => wc.reload() },
     { label: 'Duplicar aba', click: () => createServiceTab(t.serviceId, wc.getURL(), { afterId: t.id }) },
     { label: 'Voltar ao início da rede', click: () => wc.loadURL(svc.url) },
@@ -1198,6 +1401,8 @@ function tabMenu(id) {
     { label: 'Abrir em nova janela', click: () => moveTabToWindow(t) },
     { label: 'Mini janela flutuante (sempre no topo)', click: () => openWindow(wc.getURL(), t.serviceId, { mini: true }) },
     { label: 'Continuar reproduzindo em segundo plano', type: 'checkbox', checked: bgAllowed(t.serviceId), click: (mi) => setBgPlay(t.serviceId, mi.checked) },
+    { label: 'Sempre ativa (não suspender para economizar RAM)', type: 'checkbox', checked: keepAlive(t.serviceId), click: (mi) => { store.set('alive', { ...(store.get('alive') || {}), [t.serviceId]: mi.checked }); sendConfig(); } },
+    { label: 'Modo celular', type: 'checkbox', checked: isMobile(t.serviceId), click: () => toggleMobile(t.serviceId) },
     { label: t.muted ? 'Reativar som da aba' : 'Silenciar aba', click: () => { wc.setAudioMuted(!wc.isAudioMuted()); t.muted = wc.isAudioMuted(); sendTabs(); } },
     { type: 'separator' },
     { label: `Sair da conta (${svc ? svc.name : ''})`, click: () => logout(t.serviceId) },
@@ -1261,7 +1466,7 @@ async function logout(serviceId) {
   await ses.clearStorageData();
   await ses.clearCache();
   await ses.clearAuthCache().catch(() => {});
-  for (const t of tabs.filter((x) => x.serviceId === serviceId)) t.view.webContents.loadURL(svc.url);
+  for (const t of tabs.filter((x) => x.serviceId === serviceId)) { t.url = svc.url; if (t.view) t.view.webContents.loadURL(svc.url); }
 }
 
 function removeCustom(serviceId) {
@@ -1300,6 +1505,14 @@ async function fetchSiteIcon(url) {
   } catch {
     try { return new URL('/favicon.ico', url).href; } catch { return ''; }
   }
+}
+
+async function fetchSiteIconChecked(url, serviceId) {
+  try {
+    const res = await net.fetch(url, { headers: { 'User-Agent': UA } });
+    if (!isInternal(serviceId, res.url || url) || AUTH_HOSTS.includes(new URL(res.url || url).hostname)) return '';
+  } catch { return ''; }
+  return fetchSiteIcon(url);
 }
 
 async function fillCustomIcon(id) {
@@ -1442,12 +1655,98 @@ async function installUpdate(asset, portable) {
 }
 
 // ---------------------------------------------------------------------------
+// Memória
+// ---------------------------------------------------------------------------
+function memoryOf(wc) {
+  try {
+    const pid = wc.getOSProcessId();
+    const m = app.getAppMetrics().find((x) => x.pid === pid);
+    return m ? Math.round(m.memory.workingSetSize / 1024) : 0;
+  } catch { return 0; }
+}
+function memoryReport() {
+  const metrics = app.getAppMetrics();
+  const total = Math.round(metrics.reduce((a, m) => a + (m.memory.workingSetSize || 0), 0) / 1024);
+  const perTab = tabs.filter((t) => t.type === 'service').map((t) => ({
+    name: (getService(t.serviceId) || {}).name || t.serviceId,
+    mb: t.view ? memoryOf(t.view.webContents) : 0,
+    suspended: !t.view
+  }));
+  return { total, perTab };
+}
+
+// ---------------------------------------------------------------------------
+// Bloqueio por PIN
+// ---------------------------------------------------------------------------
+let locked = false;
+let pinFails = 0;
+let pinBlockedUntil = 0;
+const hiddenByLock = new Set();
+function hasPin() { return !!store.get('pinHash'); }
+function hashPin(pin, salt) { return crypto.scryptSync(String(pin), Buffer.from(salt, 'hex'), 32).toString('hex'); }
+function checkPin(pin) {
+  if (!hasPin()) return true;
+  const a = Buffer.from(hashPin(pin, store.get('pinSalt')), 'hex');
+  const b = Buffer.from(store.get('pinHash'), 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function lockApp() {
+  if (!hasPin()) { showMain(); send('pin:setup'); return; }
+  if (locked) return;
+  locked = true;
+  if (findOpen) closeFind();
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w !== win && w.isVisible()) { hiddenByLock.add(w); w.hide(); }
+  }
+  layout();
+  send('lock', true);
+  rebuildTrayMenu();
+  log('app bloqueado');
+}
+function unlockApp(pin) {
+  const now = Date.now();
+  if (now < pinBlockedUntil) return { ok: false, wait: Math.ceil((pinBlockedUntil - now) / 1000) };
+  if (!checkPin(pin)) {
+    pinFails++;
+    if (pinFails >= 5) { pinBlockedUntil = now + Math.min(300, 30 * (pinFails - 4)) * 1000; }
+    return { ok: false, wait: pinBlockedUntil > now ? Math.ceil((pinBlockedUntil - now) / 1000) : 0 };
+  }
+  pinFails = 0;
+  locked = false;
+  for (const w of hiddenByLock) if (!w.isDestroyed()) w.show();
+  hiddenByLock.clear();
+  layout();
+  send('lock', false);
+  const wc = activeWc();
+  if (wc) wc.focus();
+  rebuildTrayMenu();
+  return { ok: true };
+}
+function setPin(current, next) {
+  if (hasPin() && !checkPin(current)) return { ok: false, error: 'PIN atual incorreto.' };
+  if (next === null) {
+    store.set('pinHash', ''); store.set('pinSalt', '');
+    sendConfig();
+    return { ok: true };
+  }
+  if (!/^\d{4,8}$/.test(String(next))) return { ok: false, error: 'O PIN deve ter de 4 a 8 números.' };
+  const salt = crypto.randomBytes(16).toString('hex');
+  store.set('pinSalt', salt);
+  store.set('pinHash', hashPin(next, salt));
+  sendConfig();
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Configurações
 // ---------------------------------------------------------------------------
 function publicConfig() {
   const c = { ...store.all() };
   delete c.lastTabs;
   delete c.windowBounds;
+  delete c.pinHash;
+  delete c.pinSalt;
+  c.hasPin = hasPin();
   c.resolvedDownloadDir = downloadDir();
   return c;
 }
@@ -1475,7 +1774,8 @@ function applyTheme() {
 
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
-    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay'];
+    'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay',
+    'order', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
@@ -1494,6 +1794,7 @@ async function setConfig(key, value) {
 // ---------------------------------------------------------------------------
 function registerIpc() {
   ipcMain.handle('ui:init', () => ({
+    locked,
     config: publicConfig(),
     services: allServices(),
     tabs: { active: activeId, tabs: tabs.map(tabInfo) },
@@ -1522,6 +1823,17 @@ function registerIpc() {
   ipcMain.handle('ui:pick-download-dir', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Pasta de downloads', defaultPath: downloadDir(), properties: ['openDirectory', 'createDirectory'] });
     if (!r.canceled && r.filePaths[0]) { store.set('downloadDir', r.filePaths[0]); sendConfig(); }
+  });
+  ipcMain.on('ui:open-browser', () => openBrowserNewTab());
+  ipcMain.on('ui:toggle-mobile', () => { const t = activeTab(); if (t && t.type === 'service') toggleMobile(t.serviceId); });
+  ipcMain.on('ui:lock', () => lockApp());
+  ipcMain.handle('ui:unlock', (_e, pin) => unlockApp(pin));
+  ipcMain.handle('ui:set-pin', (_e, current, next) => setPin(current, next));
+  ipcMain.handle('ui:memory', () => memoryReport());
+  ipcMain.on('web:nav', (e, dir) => {
+    const wc = e.sender;
+    if (dir === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+    if (dir === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   });
   ipcMain.on('ui:open-logs', () => { fs.mkdirSync(LOG_DIR, { recursive: true }); shell.openPath(LOG_DIR); });
   ipcMain.on('ui:open-download-dir', () => shell.openPath(downloadDir()));
@@ -1562,6 +1874,7 @@ function registerIpc() {
       await ses.clearCache();
     }
     for (const t of tabs.filter((x) => x.view)) t.view.webContents.loadURL(getService(t.serviceId).url);
+    store.set('favicons', {});
   });
   ipcMain.on('ui:check-updates', () => checkForUpdates(true));
   ipcMain.on('ui:external', (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
@@ -1598,12 +1911,30 @@ app.whenReady().then(() => {
     setInterval(() => { if (store.get('autoUpdateCheck')) checkForUpdates(false); }, 6 * 3600 * 1000);
   }
 
+  // logos antigas podiam ter ficado com a logo do Google (tela de login): limpa uma vez
+  if ((store.get('faviconsV') || 0) < 2) { store.set('favicons', {}); store.set('faviconsV', 2); }
+  setTimeout(() => refreshServiceIcons(false).catch(() => {}), 4000);
+
+  // trava ao iniciar
+  if (hasPin() && store.get('lockOnStart')) { locked = true; }
+
   if (store.get('restoreTabs')) {
     const last = store.get('lastTabs') || [];
     for (const t of last) {
-      if (getService(t.serviceId)) createServiceTab(t.serviceId, t.url || undefined, { activate: false });
+      if (!getService(t.serviceId)) continue;
+      // mensageiros carregam já (notificações); o resto só quando abrir a aba
+      const lazy = store.get('lazyTabs') !== false && !keepAlive(t.serviceId);
+      createServiceTab(t.serviceId, t.url || undefined, { activate: false, lazy });
     }
   }
+
+  setInterval(hibernateTick, 60000);
+  // bloqueio automático por inatividade do PC
+  setInterval(() => {
+    const min = Number(store.get('autoLockMinutes')) || 0;
+    if (!min || !hasPin() || locked) return;
+    try { if (powerMonitor.getSystemIdleTime() >= min * 60) lockApp(); } catch {}
+  }, 30000);
   activateTab('home');
 });
 

@@ -5,7 +5,7 @@ Todas as suas redes sociais em um só app para Windows, com abas no estilo naveg
 ## Recursos
 
 - **Início estilo smartphone**: relógio, busca, grade de ícones e dock com favoritos (botão direito > "Fixar no dock").
-- **19 redes prontas**: WhatsApp, Instagram, Facebook, X (Twitter), Snapchat, Reddit, Gmail, Telegram, TikTok, YouTube, Discord, Threads, LinkedIn, Pinterest, Twitch, Bluesky, Tumblr, Kwai e Kick, além de **sites personalizados** (botão "Adicionar"), que ganham a logo do próprio site.
+- **19 redes + 8 IAs prontas** (ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek, Grok, Le Chat). Redes: WhatsApp, Instagram, Facebook, X (Twitter), Snapchat, Reddit, Gmail, Telegram, TikTok, YouTube, Discord, Threads, LinkedIn, Pinterest, Twitch, Bluesky, Tumblr, Kwai e Kick, além de **sites personalizados** (botão "Adicionar"), que ganham a logo do próprio site.
 - **Login separado por rede**, salvo no PC: você entra uma vez e continua logado.
 - **Abas**: arrastar para reordenar, botão do meio fecha, botão direito tem mais opções, contador de mensagens não lidas em cada aba, no ícone do início, na bandeja e na barra de tarefas.
 - **Botão direito nas páginas**:
@@ -18,6 +18,8 @@ Todas as suas redes sociais em um só app para Windows, com abas no estilo naveg
 - **Reprodução em segundo plano por rede**: YouTube, Twitch e Kick continuam tocando ao trocar de aba/minimizar; as outras pausam (configurável por rede).
 - **Segurança**: cookies criptografados (DPAPI do Windows), câmera/microfone/tela só com permissão, chaves de acesso (passkeys) bloqueadas por padrão.
 - **Atualizações**: verifica as Releases do GitHub ao abrir e a cada 6 horas, baixa a nova versão e reinicia já atualizado (portable ou instalador).
+- **Links no navegador padrão**, botões flutuantes de voltar/avançar, ícone para abrir nova guia no navegador e **modo celular** por site.
+- **Bloqueio por PIN**, ícones do início reorganizáveis com arrastar e soltar, e **suspensão de abas** inativas para economizar RAM.
 - Downloads com progresso, buscar na página, zoom salvo por rede, tema claro e escuro, iniciar com o Windows.
 
 ## Atalhos

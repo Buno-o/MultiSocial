@@ -1,5 +1,11 @@
-## Novidades da v1.3.1
+## Novidades da v1.4.0
 
-- **Corrigido**: Instagram, Facebook, X e outras abas abertas em segundo plano ficavam só com o círculo de carregamento ao abrir (bug do Electron com abas ocultas). Agora a aba é redesenhada ao ser mostrada, também ao voltar da bandeja ou de minimizado.
-- Se uma página travar 3 vezes em 1 minuto, o app para de recarregar em loop e mostra uma tela com o motivo.
-- Novo **log de diagnóstico** (Configurações > Avançado > Abrir pasta de logs) para ajudar a encontrar bugs.
+- **Links no navegador padrão**: links para outros sites e links de "nova aba" abrem no seu navegador (dá para desligar em Configurações > Links). A navegação dentro da própria rede e os logins continuam no app.
+- **Voltar / Avançar flutuantes**: botões pequenos aparecem dentro da página quando o mouse chega perto do canto superior esquerdo (voltar) ou direito (avançar).
+- **Ícone de internet** na barra superior: abre uma nova guia no seu navegador padrão.
+- **Modo celular** por site (ícone ao lado do de internet): o site abre na versão de celular, numa coluna estreita.
+- **IAs adicionadas**: ChatGPT, Claude, Gemini, Copilot, Perplexity, DeepSeek, Grok e Le Chat (Mistral), abrindo direto na conversa.
+- **Arrastar e soltar** os ícones do início para reorganizar; arraste para o dock para fixar, ou para fora do dock para remover.
+- **Logos corrigidas**: os ícones não ficam mais com a logo do Google (vinha da tela de login). As logos agora são buscadas no próprio site.
+- **Bloqueio por PIN**: defina um PIN (4 a 8 números) e use o cadeado na barra superior para bloquear. Opções para bloquear ao abrir, ao minimizar ou com o PC inativo.
+- **Menos RAM**: abas sem uso são suspensas depois de 15 minutos (mensageiros e abas tocando som nunca são), abas restauradas só carregam quando abertas, e o uso de memória aparece nas Configurações e no botão direito da aba.

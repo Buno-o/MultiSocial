@@ -112,6 +112,36 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 #dl-btn.indeterminate .ring { animation: spin 1s linear infinite; }
 #dl-btn.indeterminate .ring circle { stroke-dashoffset: 60; }
 
+#mobile-btn.on, #lock-btn.on { color: var(--accent2); }
+.tab.suspended .label { opacity: .55; font-style: italic; }
+.tab.suspended .fav { filter: grayscale(1); opacity: .6; }
+#web-bg.mobile { background: radial-gradient(600px 400px at 50% 30%, var(--panel2), var(--bg)); }
+#web-bg.mobile .spinner { display: none; }
+
+/* ------------------------------------------------------------------ Bloqueio */
+#lockscreen {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  background: radial-gradient(900px 600px at 30% 20%, var(--wall1), transparent 60%), radial-gradient(800px 600px at 80% 80%, var(--wall3), transparent 60%), var(--bg);
+  -webkit-app-region: drag;
+}
+.lock-card { text-align: center; -webkit-app-region: no-drag; animation: pop .25s cubic-bezier(.2,.9,.3,1.3); }
+.lock-icon { width: 70px; height: 70px; margin: 0 auto 14px; border-radius: 22px; display: grid; place-items: center; background: linear-gradient(145deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+.lock-icon svg { width: 34px; height: 34px; }
+.lock-card h2 { margin: 0 0 4px; font-weight: 600; }
+.lock-card p { margin: 0 0 18px; color: var(--muted); }
+#unlock-pin { width: 200px; height: 46px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); color: var(--text); text-align: center; font-size: 24px; letter-spacing: 8px; outline: none; }
+#unlock-pin:focus { border-color: var(--accent); }
+#unlock-error { display: block; height: 18px; margin-top: 10px; color: var(--danger); }
+.shake { animation: shake .3s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+
+/* ------------------------------------------------------------------ Arrastar ícones */
+.app.drag-src { opacity: .35; }
+.app.drop-left::before, .app.drop-right::before { content: ""; position: absolute; top: 8px; bottom: 26px; width: 3px; border-radius: 2px; background: var(--accent); }
+.app.drop-left::before { left: -8px; }
+.app.drop-right::before { right: -8px; }
+.dock.drop-target { outline: 2px dashed var(--accent); outline-offset: 4px; }
+
 /* ------------------------------------------------------------------ Buscar */
 #findbar {
   position: fixed; top: var(--tab-h); left: 0; right: 0; height: var(--find-h);
@@ -240,7 +270,7 @@ select { min-width: 210px; }
 .svc-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
 .svc-item .icon { --icon: 30px; width: 30px; height: 30px; font-size: 12px; border-radius: 9px; box-shadow: none; flex: none; }
 .mini-sw { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; flex: none; }
-.svc-list { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)) !important; }
+.svc-list { grid-template-columns: 1fr !important; }
 .svc-item .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .custom-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .custom-fields { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }

@@ -11,7 +11,8 @@ let selectedIdx = -1;
 // ------------------------------------------------------------------ Ícones
 function faviconFor(svc) {
   // retorna [url, tamanho mínimo aceito]
-  if (svc.icon) return [svc.icon, 1];                                   // logo buscada do site (personalizados)
+  if (svc.icon) return [svc.icon, 1];                                            // logo fixa / buscada (personalizados)
+  if (config.icons && config.icons[svc.id]) return [config.icons[svc.id], 1];    // logo buscada no próprio site
   if (config.favicons && config.favicons[svc.id]) return [config.favicons[svc.id], 1]; // logo que aparece na aba
   try { return [`https://www.google.com/s2/favicons?domain=${new URL(svc.url).hostname}&sz=128`, 24]; } catch { return ['', 0]; }
 }
@@ -99,8 +100,9 @@ function createTabEl(id) {
 function updateTabEl(d, t, i) {
   d.classList.toggle('active', t.id === tabState.active);
   d.classList.toggle('loading', !!t.loading);
+  d.classList.toggle('suspended', !!t.suspended);
   const shortcut = i + 2 <= 8 ? `Ctrl+${i + 2}` : (i === tabState.tabs.length - 1 ? 'Ctrl+9' : '');
-  d.title = `${t.name}${t.title && t.title !== t.name ? ' — ' + t.title : ''}${shortcut ? '  (' + shortcut + ')' : ''}`;
+  d.title = `${t.name}${t.title && t.title !== t.name ? ' — ' + t.title : ''}${shortcut ? '  (' + shortcut + ')' : ''}${t.suspended ? '\nSuspensa para economizar memória — clique para carregar' : ''}`;
   const favKey = `${t.type}|${t.favicon}|${t.glyph}`;
   if (d.favKey !== favKey) { d.favKey = favKey; d.favBox.replaceChildren(tabFav(t)); }
   if (d.labelEl.textContent !== t.name) d.labelEl.textContent = t.name;
@@ -142,19 +144,103 @@ function renderTabs() {
   $('#web-bg').classList.toggle('hidden', !(active && active.type === 'service'));
   const isWeb = !!(active && active.type === 'service');
   $('#nav').classList.toggle('hidden', !isWeb);
-  if (isWeb) {
-    $('[data-nav=back]').disabled = !active.canBack;
-    $('[data-nav=forward]').disabled = !active.canForward;
-  }
+  const mb = $('#mobile-btn');
+  mb.disabled = !isWeb;
+  mb.classList.toggle('on', !!(isWeb && active.mobile));
+  mb.title = isWeb ? (active.mobile ? `Sair do modo celular (${active.name})` : `Modo celular neste site (${active.name})`) : 'Modo celular (abra um site primeiro)';
+  $('#web-bg').classList.toggle('mobile', !!(isWeb && active.mobile));
+  setClockRunning(tabState.active === 'home');
   document.title = active ? `${active.name} — MultiSocial` : 'MultiSocial';
   renderHomeBadges();
 }
 
 // ------------------------------------------------------------------ Início
+function orderedServices() {
+  const order = config.order || [];
+  const pos = new Map(order.map((id, i) => [id, i]));
+  return services
+    .map((s, i) => ({ s, k: pos.has(s.id) ? pos.get(s.id) : order.length + i }))
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.s);
+}
 function visibleServices() {
   const hidden = new Set(config.hidden || []);
-  return services.filter((s) => !hidden.has(s.id));
+  return orderedServices().filter((s) => !hidden.has(s.id));
 }
+
+// ---- arrastar e soltar ícones (reordenar o início e o dock)
+let dragSvc = null;      // { id, from: 'grid' | 'dock' }
+function clearDropMarks() {
+  document.querySelectorAll('.drop-left, .drop-right, .drag-src').forEach((n) => n.classList.remove('drop-left', 'drop-right', 'drag-src'));
+  $('#dock').classList.remove('drop-target');
+}
+function enableDrag(a, svc, from) {
+  a.draggable = true;
+  a.addEventListener('dragstart', (e) => {
+    if ($('#search').value) { e.preventDefault(); return; }
+    dragSvc = { id: svc.id, from };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', svc.id);
+    requestAnimationFrame(() => a.classList.add('drag-src'));
+  });
+  a.addEventListener('dragend', () => { dragSvc = null; clearDropMarks(); });
+  a.addEventListener('dragover', (e) => {
+    if (!dragSvc || dragSvc.id === svc.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = a.getBoundingClientRect();
+    const right = e.clientX > r.left + r.width / 2;
+    a.classList.toggle('drop-right', right);
+    a.classList.toggle('drop-left', !right);
+  });
+  a.addEventListener('dragleave', () => a.classList.remove('drop-left', 'drop-right'));
+  a.addEventListener('drop', (e) => {
+    if (!dragSvc || dragSvc.id === svc.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const right = a.classList.contains('drop-right');
+    const src = dragSvc;
+    clearDropMarks();
+    if (from === 'dock') {
+      // soltou dentro do dock: fixa/reordena no dock
+      const d = (config.dock || []).filter((x) => x !== src.id);
+      let i = d.indexOf(svc.id) + (right ? 1 : 0);
+      d.splice(i, 0, src.id);
+      ms.invoke('ui:set-config', 'dock', d.slice(0, 7));
+    } else {
+      if (src.from === 'dock') { // tirou do dock e soltou no início: remove do dock
+        ms.invoke('ui:set-config', 'dock', (config.dock || []).filter((x) => x !== src.id));
+        return;
+      }
+      const ids = orderedServices().map((x) => x.id).filter((x) => x !== src.id);
+      const i = ids.indexOf(svc.id) + (right ? 1 : 0);
+      ids.splice(i, 0, src.id);
+      config.order = ids;
+      renderHome();
+      ms.invoke('ui:set-config', 'order', ids);
+    }
+  });
+}
+// soltar no espaço vazio do dock = fixar no dock / no espaço do início = tirar do dock
+$('#dock').addEventListener('dragover', (e) => { if (dragSvc) { e.preventDefault(); $('#dock').classList.add('drop-target'); } });
+$('#dock').addEventListener('dragleave', (e) => { if (!$('#dock').contains(e.relatedTarget)) $('#dock').classList.remove('drop-target'); });
+$('#dock').addEventListener('drop', (e) => {
+  if (!dragSvc) return;
+  e.preventDefault();
+  const src = dragSvc;
+  clearDropMarks();
+  const d = (config.dock || []).filter((x) => x !== src.id);
+  d.push(src.id);
+  ms.invoke('ui:set-config', 'dock', d.slice(0, 7));
+});
+$('#home').addEventListener('dragover', (e) => { if (dragSvc && dragSvc.from === 'dock') e.preventDefault(); });
+$('#home').addEventListener('drop', (e) => {
+  if (!dragSvc || dragSvc.from !== 'dock') return;
+  e.preventDefault();
+  const src = dragSvc;
+  clearDropMarks();
+  ms.invoke('ui:set-config', 'dock', (config.dock || []).filter((x) => x !== src.id));
+});
 function filteredServices() {
   const q = $('#search').value.trim().toLowerCase();
   const list = visibleServices();
@@ -168,7 +254,8 @@ function appTile(svc, inDock) {
   const a = el('div', 'app');
   a.dataset.id = svc.id;
   a.title = svc.name;
-  a.style.animationDelay = inDock ? '0s' : `${Math.random() * 0.12}s`;
+  a.style.animationDelay = inDock || homeRendered ? '0s' : `${Math.random() * 0.12}s`;
+  if (homeRendered && !inDock) a.style.animation = 'none';
   a.appendChild(makeIcon(svc));
   a.appendChild(el('div', 'name', esc(svc.name)));
   a.addEventListener('click', (e) => openFromHome(svc, e));
@@ -184,6 +271,7 @@ function renderHome() {
   list.forEach((svc, i) => {
     const t = appTile(svc);
     if (i === selectedIdx) t.classList.add('selected');
+    enableDrag(t, svc, 'grid');
     grid.appendChild(t);
   });
   if (!$('#search').value) {
@@ -197,10 +285,12 @@ function renderHome() {
   dock.innerHTML = '';
   for (const id of config.dock || []) {
     const s = services.find((x) => x.id === id);
-    if (s) dock.appendChild(appTile(s, true));
+    if (s) { const t = appTile(s, true); enableDrag(t, s, 'dock'); dock.appendChild(t); }
   }
+  homeRendered = true;
   renderHomeBadges();
 }
+let homeRendered = false;
 function renderHomeBadges() {
   const counts = {};
   const open = new Set();
@@ -215,6 +305,11 @@ function renderHomeBadges() {
     if (counts[id]) a.appendChild(el('span', 'badge', counts[id] > 99 ? '99+' : counts[id]));
     if (open.has(id) && !a.closest('.dock')) a.appendChild(el('span', 'open-dot'));
   });
+}
+let clockTimer = null;
+function setClockRunning(on) {
+  if (on && !clockTimer) { tickClock(); clockTimer = setInterval(tickClock, 1000); }
+  if (!on && clockTimer) { clearInterval(clockTimer); clockTimer = null; }
 }
 function tickClock() {
   const d = new Date();
@@ -274,19 +369,25 @@ function showAddModal() {
 }
 
 // ------------------------------------------------------------------ Configurações
-const SETTING_KEYS = ['disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
+const NUM_KEYS = new Set(['suspendMinutes', 'autoLockMinutes']);
+const SETTING_KEYS = ['externalLinks', 'suspendMinutes', 'lazyTabs', 'lockOnStart', 'lockOnHide', 'autoLockMinutes', 'disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
 function renderSettings() {
   for (const k of SETTING_KEYS) {
     const input = document.getElementById('set-' + k);
     if (!input) continue;
-    if (input.type === 'checkbox') input.checked = !!config[k];
+    if (input.type === 'checkbox') input.checked = config[k] !== false && config[k] != null ? !!config[k] : false;
     else input.value = config[k] == null ? '' : config[k];
   }
   $('#dl-dir').textContent = config.resolvedDownloadDir || '';
   const list = $('#svc-list');
   list.innerHTML = '';
   const hidden = new Set(config.hidden || []);
-  for (const s of services) {
+  $('#pin-status').textContent = config.hasPin ? 'PIN definido. Clique no cadeado (barra superior) para bloquear.' : 'Nenhum PIN definido.';
+  $('#pin-set').textContent = config.hasPin ? 'Alterar PIN' : 'Definir PIN';
+  $('#pin-remove').classList.toggle('hidden', !config.hasPin);
+  $('#lock-btn').classList.toggle('on', !!config.hasPin);
+  $('#lock-btn').title = config.hasPin ? 'Bloquear agora' : 'Bloquear com PIN (definir PIN)';
+  for (const s of orderedServices()) {
     const row = el('div', 'svc-item');
     row.appendChild(makeIcon(s, 30));
     row.appendChild(el('span', 'n', esc(s.name)));
@@ -298,6 +399,15 @@ function renderSettings() {
     bg.checked = bgVal === true || bgVal === false ? bgVal : !!s.bg;
     bg.onchange = () => ms.invoke('ui:set-config', 'bgPlay', { ...(config.bgPlay || {}), [s.id]: bg.checked });
     bgWrap.append(el('span', '', '2º plano'), bg);
+    const alVal = (config.alive || {})[s.id];
+    const alWrap = el('label', 'mini-sw');
+    alWrap.title = 'Sempre ativa: nunca suspender para economizar RAM (mantém notificações)';
+    const al = el('input', 'switch');
+    al.type = 'checkbox';
+    al.checked = alVal === true || alVal === false ? alVal : !!s.alive;
+    al.onchange = () => ms.invoke('ui:set-config', 'alive', { ...(config.alive || {}), [s.id]: al.checked });
+    alWrap.append(el('span', '', 'Ativa'), al);
+    row.appendChild(alWrap);
     row.appendChild(bgWrap);
     const out = el('button', 'btn small', 'Sair');
     out.title = 'Sair da conta desta rede';
@@ -325,6 +435,7 @@ for (const k of SETTING_KEYS) {
   input.addEventListener('change', () => {
     let v = input.type === 'checkbox' ? input.checked : input.value;
     if (k === 'closeAction' && v === '') v = null;
+    if (NUM_KEYS.has(k)) v = Number(v) || 0;
     ms.invoke('ui:set-config', k, v);
   });
 }
@@ -353,7 +464,82 @@ function applyConfig() {
   renderSettings();
 }
 
+// ------------------------------------------------------------------ Memória
+async function refreshMemory() {
+  const r = await ms.invoke('ui:memory');
+  const parts = r.perTab.map((t) => `${t.name}: ${t.suspended ? 'suspensa' : t.mb + ' MB'}`);
+  $('#mem-info').textContent = `Total do app: ${r.total} MB` + (parts.length ? ` · ${parts.join(' · ')}` : '');
+}
+$('#mem-refresh').onclick = refreshMemory;
+
+// ------------------------------------------------------------------ PIN
+function showPinModal() {
+  const back = el('div', 'modal-back');
+  back.innerHTML = `
+    <form class="modal">
+      <h3>${config.hasPin ? 'Alterar PIN' : 'Definir PIN'}</h3>
+      <div class="custom-fields">
+        ${config.hasPin ? '<input type="password" name="cur" inputmode="numeric" maxlength="8" placeholder="PIN atual" autocomplete="off">' : ''}
+        <input type="password" name="pin" inputmode="numeric" maxlength="8" placeholder="Novo PIN (4 a 8 números)" autocomplete="off" required>
+        <input type="password" name="pin2" inputmode="numeric" maxlength="8" placeholder="Confirmar novo PIN" autocomplete="off" required>
+      </div>
+      <small class="error"></small>
+      <div class="actions"><button type="button" class="btn" data-cancel>Cancelar</button><button class="btn primary">Salvar</button></div>
+    </form>`;
+  document.body.appendChild(back);
+  const f = back.querySelector('form');
+  (f.cur || f.pin).focus();
+  back.querySelector('[data-cancel]').onclick = () => back.remove();
+  f.addEventListener('keydown', (e) => { if (e.key === 'Escape') back.remove(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = back.querySelector('.error');
+    if (f.pin.value !== f.pin2.value) { err.textContent = 'Os PINs não conferem.'; return; }
+    const r = await ms.invoke('ui:set-pin', f.cur ? f.cur.value : '', f.pin.value);
+    if (!r.ok) { err.textContent = r.error; return; }
+    back.remove();
+  });
+}
+async function removePin() {
+  const back = el('div', 'modal-back');
+  back.innerHTML = `<form class="modal"><h3>Remover PIN</h3><div class="custom-fields"><input type="password" name="cur" inputmode="numeric" maxlength="8" placeholder="PIN atual" autocomplete="off" required></div>
+    <small class="error"></small><div class="actions"><button type="button" class="btn" data-cancel>Cancelar</button><button class="btn danger">Remover</button></div></form>`;
+  document.body.appendChild(back);
+  const f = back.querySelector('form');
+  f.cur.focus();
+  back.querySelector('[data-cancel]').onclick = () => back.remove();
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await ms.invoke('ui:set-pin', f.cur.value, null);
+    if (!r.ok) { back.querySelector('.error').textContent = r.error; return; }
+    back.remove();
+  });
+}
+$('#pin-set').onclick = showPinModal;
+$('#pin-remove').onclick = removePin;
+ms.on('pin:setup', () => { ms.send('ui:open-settings'); setTimeout(showPinModal, 120); });
+
+function setLocked(on) {
+  $('#lockscreen').classList.toggle('hidden', !on);
+  document.querySelectorAll('.modal-back').forEach((m) => m.remove());
+  if (on) { $('#unlock-pin').value = ''; $('#unlock-error').textContent = ''; setTimeout(() => $('#unlock-pin').focus(), 50); }
+}
+ms.on('lock', setLocked);
+$('#unlock-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await ms.invoke('ui:unlock', $('#unlock-pin').value);
+  if (r.ok) return;
+  const card = document.querySelector('.lock-card');
+  card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+  $('#unlock-pin').value = '';
+  $('#unlock-error').textContent = r.wait ? `Muitas tentativas. Aguarde ${r.wait}s.` : 'PIN incorreto.';
+});
+$('#lockscreen').addEventListener('mousedown', () => setTimeout(() => $('#unlock-pin').focus(), 0));
+
 // ------------------------------------------------------------------ Barra superior
+$('#browser-btn').addEventListener('click', () => ms.send('ui:open-browser'));
+$('#mobile-btn').addEventListener('click', () => ms.send('ui:toggle-mobile'));
+$('#lock-btn').addEventListener('click', () => ms.send('ui:lock'));
 $('#home-tab').addEventListener('click', () => ms.send('ui:activate', 'home'));
 $('#new-tab').addEventListener('click', () => { ms.send('ui:activate', 'home'); setTimeout(() => $('#search').focus(), 30); });
 $('#settings-btn').addEventListener('click', () => ms.send('ui:open-settings'));
@@ -401,6 +587,6 @@ ms.on('downloads', (d) => {
   $('#cur-version').textContent = 'Versão instalada: ' + init.version;
   applyConfig();
   renderTabs();
-  tickClock();
-  setInterval(tickClock, 1000);
+  setClockRunning(tabState.active === 'home');
+  if (init.locked) setLocked(true);
 })();
