@@ -83,7 +83,16 @@ function createTabEl(id) {
   d.addEventListener('contextmenu', (e) => { e.preventDefault(); ms.send('ui:tab-menu', id); });
 
   d.addEventListener('dragstart', (e) => { dragId = id; d.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
-  d.addEventListener('dragend', () => { dragId = null; d.classList.remove('dragging'); document.querySelectorAll('.drop-before').forEach((n) => n.classList.remove('drop-before')); });
+  d.addEventListener('dragend', (e) => {
+    const wasDrag = dragId;
+    dragId = null;
+    d.classList.remove('dragging');
+    document.querySelectorAll('.drop-before').forEach((n) => n.classList.remove('drop-before'));
+    // não foi solto em outra aba: se saiu da barra de abas, vira janela independente
+    if (wasDrag != null && e.dataTransfer.dropEffect === 'none' && (e.screenX || e.screenY)) {
+      ms.send('ui:detach-tab', wasDrag, e.screenX, e.screenY);
+    }
+  });
   d.addEventListener('dragover', (e) => { if (dragId == null || dragId === id) return; e.preventDefault(); d.classList.add('drop-before'); });
   d.addEventListener('dragleave', () => d.classList.remove('drop-before'));
   d.addEventListener('drop', (e) => {

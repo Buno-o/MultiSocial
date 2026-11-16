@@ -125,6 +125,42 @@ function unwrapLink(url) {
   } catch {}
   return url;
 }
+// Domínios "largos" usados por vários serviços: só contam pelo endereço exato (ex.: mail.google.com, gemini.google.com)
+const SHARED_BASES = new Set(['google.com', 'microsoft.com', 'live.com', 'bing.com']);
+// Qual rede cadastrada no app é dona deste link? (null = site externo)
+function ownerOf(url, fromServiceId) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  const host = u.hostname.toLowerCase();
+  const base = baseDomain(host);
+  let best = null;
+  let bestScore = 0;
+  for (const svc of allServices()) {
+    let score = 0;
+    let ph = '';
+    try { ph = new URL(svc.url).hostname.toLowerCase(); } catch { continue; }
+    const pbase = baseDomain(ph);
+    if (host === ph || host.endsWith('.' + ph)) score = 3;
+    else if (base === pbase && !SHARED_BASES.has(base)) score = 2;
+    else if (serviceDomains(svc.id).some((d) => !SHARED_BASES.has(d) && (host === d || host.endsWith('.' + d)))) score = 1; // domínios alternativos (youtu.be, twitter.com, t.me...)
+    if (score > bestScore || (score === bestScore && score > 0 && svc.id === fromServiceId)) { best = svc.id; bestScore = score; }
+  }
+  return best;
+}
+// Abre um link que saiu de uma rede: rede cadastrada -> nova aba no app; externo -> navegador padrão
+function routeLink(url, fromServiceId, afterId, background) {
+  const real = unwrapLink(url);
+  const owner = ownerOf(real, fromServiceId);
+  if (owner) {
+    const t = createServiceTab(owner, real, { activate: !background, afterId });
+    if (t && background) ensureView(t);
+    return 'app';
+  }
+  openInBrowser(real);
+  return 'browser';
+}
+
 function openInBrowser(url) {
   const t = unwrapLink(url);
   shell.openExternal(t).catch(() => {});
@@ -851,13 +887,25 @@ function goToIndex(n) {
   if (t) activateTab(t.id);
 }
 
-function moveTabToWindow(t) {
+function moveTabToWindow(t, pos) {
   if (!t || t.type !== 'service') return;
   const url = tabUrl(t);
   const sid = t.serviceId;
   closeTab(t.id);
   closedStack.pop();
-  openWindow(url, sid);
+  openWindow(url, sid, pos ? { x: Math.round(pos.x - 120), y: Math.round(pos.y - 16) } : {});
+}
+
+// Aba arrastada e solta fora da barra de abas (ou fora da janela): vira uma janela independente
+function detachTab(id, screenX, screenY) {
+  const t = tabs.find((x) => x.id === id);
+  if (!t || t.type !== 'service') return;
+  const b = win.getBounds();
+  const inside = screenX >= b.x && screenX <= b.x + b.width && screenY >= b.y && screenY <= b.y + b.height;
+  const inTabBar = inside && screenY <= b.y + TAB_H + 14;
+  if (inTabBar) return;
+  log('aba destacada em janela', t.serviceId);
+  moveTabToWindow(t, { x: screenX, y: screenY });
 }
 
 // ---------------------------------------------------------------------------
@@ -919,6 +967,7 @@ function openWindow(url, serviceId, opts = {}) {
   const w = new BrowserWindow({
     width: opts.mini ? 520 : 1100,
     height: opts.mini ? 330 : 800,
+    ...(Number.isFinite(opts.x) && Number.isFinite(opts.y) ? { x: opts.x, y: opts.y } : {}),
     alwaysOnTop: !!opts.mini,
     autoHideMenuBar: true,
     icon: ICON,
@@ -949,7 +998,10 @@ function wireWebContents(wc, ctx) {
     if (disposition === 'new-window' && (isInternal(ctx.serviceId, url) || /^about:blank/i.test(url))) {
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON, width: 620, height: 760 } };
     }
-    if (store.get('externalLinks') !== false) { openInBrowser(url); return { action: 'deny' }; }
+    if (store.get('externalLinks') !== false) {
+      routeLink(url, ctx.serviceId, tab ? tab.id : undefined, disposition === 'background-tab');
+      return { action: 'deny' };
+    }
     if (disposition === 'new-window') {
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON, width: 620, height: 760 } };
     }
@@ -957,16 +1009,17 @@ function wireWebContents(wc, ctx) {
     else openWindow(url, ctx.serviceId);
     return { action: 'deny' };
   });
-  // links para outros sites (mesma aba) -> navegador padrão
+  // link para fora da rede (mesma aba): outra rede do app -> nova aba no app; site externo -> navegador padrão
   const leaving = (e, url, isMainFrame) => {
     if (isMainFrame === false || store.get('externalLinks') === false) return;
-    if (!/^https?:/i.test(url) || isInternal(ctx.serviceId, url)) {
+    if (!/^https?:/i.test(url)) return;
+    if (isInternal(ctx.serviceId, url)) {
       const real = unwrapLink(url);
-      if (real !== url && !isInternal(ctx.serviceId, real)) { e.preventDefault(); openInBrowser(real); }
+      if (real !== url && !isInternal(ctx.serviceId, real)) { e.preventDefault(); routeLink(real, ctx.serviceId, tab ? tab.id : undefined); }
       return;
     }
     e.preventDefault();
-    openInBrowser(url);
+    routeLink(url, ctx.serviceId, tab ? tab.id : undefined);
   };
   wc.on('will-navigate', (e) => leaving(e, e.url, e.isMainFrame));
   wc.on('will-redirect', (e) => { if (e.isMainFrame && !e.isSameDocument) leaving(e, e.url, true); });
@@ -1423,6 +1476,15 @@ async function showWebContextMenu(wc, params, ctx) {
   sep();
   if (ctx.tab) {
     t.push({ label: 'Abrir esta aba em nova janela', accelerator: 'Ctrl+Shift+N', click: () => moveTabToWindow(ctx.tab) });
+  } else if (ctx.win && getService(serviceId)) {
+    t.push({
+      label: 'Voltar para o MultiSocial (como aba)', click: () => {
+        const u = wc.getURL();
+        createServiceTab(serviceId, /^https?:/i.test(u) ? u : undefined, { activate: true });
+        showMain();
+        ctx.win.close();
+      }
+    });
   }
   t.push({ label: 'Mini janela flutuante (sempre no topo)', accelerator: 'Ctrl+Shift+M', click: () => openWindow(wc.getURL(), serviceId, { mini: true }) });
   t.push({ label: 'Silenciar página', type: 'checkbox', checked: wc.isAudioMuted(), click: () => { wc.setAudioMuted(!wc.isAudioMuted()); if (ctx.tab) { ctx.tab.muted = wc.isAudioMuted(); sendTabs(); } } });
@@ -1943,6 +2005,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win, { title: 'Pasta de downloads', defaultPath: downloadDir(), properties: ['openDirectory', 'createDirectory'] });
     if (!r.canceled && r.filePaths[0]) { store.set('downloadDir', r.filePaths[0]); sendConfig(); }
   });
+  ipcMain.on('ui:detach-tab', (_e, id, x, y) => detachTab(id, x, y));
   ipcMain.on('ui:open-browser', () => openBrowserNewTab());
   ipcMain.on('ui:toggle-mobile', () => { const t = activeTab(); if (t && t.type === 'service') toggleMobile(t.serviceId); });
   ipcMain.on('ui:lock', () => lockApp());
