@@ -467,9 +467,12 @@ function createMainWindow() {
     win.flashFrame(false);
     const at = activeTab();
     if (at && at.view && !locked) { try { at.view.webContents.invalidate(); } catch {} }
+    if (locked) { focusPinField(); return; }
     const wc = activeWc();
     if (wc && !findOpen) wc.focus();
   });
+  win.on('show', () => { if (locked) focusPinField(); });
+  win.on('restore', () => { if (locked) focusPinField(); });
 
   const saveBounds = () => {
     if (!win || win.isDestroyed()) return;
@@ -546,6 +549,14 @@ function applyTaskbarIdentity() {
       if (!same) shell.writeShortcutLink(lnk, fs.existsSync(lnk) ? 'replace' : 'create', opts);
     } catch (e) { log('atalho do Menu Iniciar falhou', String(e)); }
   }
+}
+
+// Bloqueado: o foco do teclado vai direto para o campo do PIN (é só digitar e dar Enter)
+function focusPinField() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.focus();
+  send('lock:focus');
+  setTimeout(() => { if (locked && !win.isDestroyed()) { win.webContents.focus(); send('lock:focus'); } }, 120);
 }
 
 function showMain() {
@@ -1881,6 +1892,7 @@ function lockApp() {
   }
   layout();
   send('lock', true);
+  focusPinField();
   rebuildTrayMenu();
   log('app bloqueado');
 }

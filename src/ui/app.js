@@ -579,6 +579,15 @@ function setLocked(on) {
   if (on) { $('#unlock-pin').value = ''; $('#unlock-error').textContent = ''; setTimeout(() => $('#unlock-pin').focus(), 50); }
 }
 ms.on('lock', setLocked);
+const focusPin = () => {
+  if ($('#lockscreen').classList.contains('hidden')) return;
+  const i = $('#unlock-pin');
+  i.focus();
+  i.select();
+};
+ms.on('lock:focus', focusPin);
+window.addEventListener('focus', focusPin);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) focusPin(); });
 $('#unlock-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const r = await ms.invoke('ui:unlock', $('#unlock-pin').value);
