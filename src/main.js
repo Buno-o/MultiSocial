@@ -2152,8 +2152,10 @@ function registerIpc() {
     if (!sid) { try { const w = BrowserWindow.fromWebContents(e.sender); sid = w && w.__serviceId; } catch {} }
     const svc = sid ? getService(sid) : null;
     const mode = store.get('mediaBar') || 'auto';
-    const mediaBar = mode === 'all' || (mode === 'auto' && !(svc && svc.nativeMedia));
-    e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false, mic: store.get('micMode') || 'natural', mediaBar };
+    // auto = em todos os sites, só nos vídeos que não têm linha do tempo própria (verificado vídeo a vídeo)
+    const mediaBar = mode !== 'off';
+    const mediaAll = mode === 'all';
+    e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false, mic: store.get('micMode') || 'natural', mediaBar, mediaAll, service: svc ? svc.id : '' };
   });
   ipcMain.on('ui:reset-perms', () => { store.set('perms', {}); dialog.showMessageBox(win, { type: 'info', message: 'Permissões redefinidas.', detail: 'Os sites vão perguntar de novo antes de usar câmera, microfone, tela ou área de transferência.' }); });
   ipcMain.on('web:notif-click', (e) => {

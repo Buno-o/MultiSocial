@@ -220,6 +220,45 @@ window.addEventListener('message', (e) => {
   let lastVol = 1;
 
   const css = (el, o) => { Object.assign(el.style, o); return el; };
+
+  // ---- som escolhido na barra. Alguns sites (Instagram) reaplicam o "mudo" deles toda vez que o
+  // vídeo volta a tocar; aqui a escolha feita na barra vale até a pessoa usar o botão do próprio site.
+  let soundChoice = null;     // { muted, volume }
+  let ourChangeAt = 0;
+  let playAt = 0;
+  const watched = new WeakSet();
+  function setSound(v, muted, volume) {
+    ourChangeAt = performance.now();
+    if (volume != null) v.volume = volume;
+    v.muted = muted;
+    soundChoice = { muted, volume: v.volume };
+  }
+  function reapply(v) {
+    if (!soundChoice || !v) return;
+    if (v.muted !== soundChoice.muted || Math.abs(v.volume - soundChoice.volume) > 0.01) {
+      ourChangeAt = performance.now();
+      v.volume = soundChoice.volume;
+      v.muted = soundChoice.muted;
+    }
+  }
+  function watch(v) {
+    if (watched.has(v)) return;
+    watched.add(v);
+    const onPlay = () => {
+      playAt = performance.now();
+      setTimeout(() => reapply(v), 30);
+      setTimeout(() => reapply(v), 250);
+      setTimeout(() => reapply(v), 700);
+    };
+    v.addEventListener('play', onPlay);
+    v.addEventListener('playing', onPlay);
+    v.addEventListener('volumechange', () => {
+      const now = performance.now();
+      if (now - ourChangeAt < 150 || !soundChoice) return;
+      if (now - playAt < 900) { reapply(v); return; }    // o site mutou sozinho ao voltar a tocar
+      soundChoice = { muted: v.muted, volume: v.volume }; // a pessoa usou o botão do próprio site
+    });
+  }
   const mk = (tag, o) => css(document.createElement(tag), o || {});
   const svgIcon = (paths, size = 16) => {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -282,7 +321,7 @@ window.addEventListener('message', (e) => {
       if (!cur) return;
       const k = ratioAt(x);
       if (kind === 'seek') { if (isFinite(cur.duration) && cur.duration > 0) cur.currentTime = k * cur.duration; }
-      else { cur.volume = k; cur.muted = k === 0; if (k > 0) lastVol = k; }
+      else { setSound(cur, k === 0, k); if (k > 0) lastVol = k; }
       refresh();
     };
     area.addEventListener('pointerdown', (e) => {
@@ -339,8 +378,8 @@ window.addEventListener('message', (e) => {
     ui.live.append(dot, document.createTextNode('AO VIVO'));
     ui.mute = iconBtn('vol', 'Mudo (clique)', () => {
       if (!cur) return;
-      if (cur.muted || cur.volume === 0) { cur.muted = false; if (cur.volume === 0) cur.volume = lastVol || 0.6; }
-      else { lastVol = cur.volume; cur.muted = true; }
+      if (cur.muted || cur.volume === 0) setSound(cur, false, cur.volume === 0 ? (lastVol || 0.6) : null);
+      else { lastVol = cur.volume; setSound(cur, true, null); }
       refresh();
     });
     ui.vol = track('vol');
@@ -352,8 +391,7 @@ window.addEventListener('message', (e) => {
     bar.addEventListener('wheel', (e) => {
       if (!cur) return;
       e.preventDefault();
-      cur.muted = false;
-      cur.volume = Math.min(1, Math.max(0, cur.volume + (e.deltaY < 0 ? 0.05 : -0.05)));
+      setSound(cur, false, Math.min(1, Math.max(0, cur.volume + (e.deltaY < 0 ? 0.05 : -0.05))));
       refresh();
     }, { passive: false });
     bar.addEventListener('mouseenter', () => { overBar = true; clearTimeout(hideTimer); });
@@ -392,6 +430,64 @@ window.addEventListener('message', (e) => {
   }
 
   // posição e tamanho acompanham o vídeo
+  let obst = { v: null, t: 0, bottom: 0, w: 0, lift: 0 };
+  const CLICKABLE = 'button,[role="button"],a[href],input,select,[aria-label],[tabindex]:not([tabindex="-1"])';
+  function siteButtonsLift(r, left, right, bottom) {
+    let minTop = Infinity;
+    const limit = r.top + r.height * 0.5;   // só considera o que está na metade de baixo do vídeo
+    const ys = [bottom - 6, bottom - H / 2, bottom - H + 4];
+    for (let x = left + 6; x <= right - 2; x += 18) {
+      for (const y of ys) {
+        let list;
+        try { list = document.elementsFromPoint(x, y); } catch { continue; }
+        for (const el of list) {
+          if (el === host) continue;               // a nossa barra
+          if (el === cur || el === document.body || el === document.documentElement) break;
+          const b = el.closest ? el.closest(CLICKABLE) : null;
+          if (b && !b.contains(cur)) {
+            const br = b.getBoundingClientRect();
+            if (br.width > 6 && br.width < 220 && br.height < 120 && br.top > limit) minTop = Math.min(minTop, br.top);
+            break;
+          }
+        }
+      }
+    }
+    return minTop === Infinity ? 0 : Math.max(0, bottom - minTop + 6);
+  }
+
+  // ---- o site já tem linha do tempo/volume para este vídeo? (verificado vídeo a vídeo, em qualquer site)
+  const tlCache = new WeakMap();
+  const TL_SEL = 'input[type="range"],progress,[role="slider"],[role="progressbar"],[aria-valuenow]';
+  function looksLikeTimeline(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width >= 50 && r.width >= 2.5 * r.height) return true;            // barra horizontal
+    if (r.width === 0 && r.height === 0 && el.matches('[role="slider"],input[type="range"]')) return true; // escondida até o hover
+    return false;
+  }
+  function scanForTimeline(root) {
+    for (const el of root.querySelectorAll(TL_SEL)) if (looksLikeTimeline(el)) return true;
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) for (const x of el.shadowRoot.querySelectorAll(TL_SEL)) if (looksLikeTimeline(x)) return true;
+    }
+    return false;
+  }
+  function hasOwnTimeline(v) {
+    const now = performance.now();
+    const c = tlCache.get(v);
+    if (c && now - c.t < 1500) return c.has;
+    const vr = v.getBoundingClientRect();
+    let has = false;
+    let node = v.parentElement;
+    for (let i = 0; i < 6 && node && !has; i++, node = node.parentElement) {
+      const nr = node.getBoundingClientRect();
+      if (nr.width > vr.width * 1.6 + 60 || nr.height > vr.height * 1.6 + 120) break; // já saiu do player
+      has = scanForTimeline(node);
+    }
+    if (!has) { const rn = v.getRootNode(); if (rn && rn !== document && rn.host) has = scanForTimeline(rn); }
+    tlCache.set(v, { t: now, has });
+    return has;
+  }
+
   function place() {
     if (!cur || !bar) return false;
     if (!cur.isConnected || document.fullscreenElement) return false;
@@ -402,8 +498,14 @@ window.addEventListener('message', (e) => {
     const bottom = Math.min(r.bottom, vh) - 8;
     const width = right - left;
     if (width < 120 || bottom - Math.max(r.top, 0) < H + 16) return false;
+    // sobe a barra se houver botões do próprio site na faixa de baixo do vídeo
+    const now = performance.now();
+    if (obst.v !== cur || now - obst.t > 500 || Math.abs(obst.bottom - bottom) > 2 || Math.abs(obst.w - width) > 2) {
+      obst = { v: cur, t: now, bottom, w: width, lift: siteButtonsLift(r, left, right, bottom) };
+    }
+    const barBottom = bottom - obst.lift;
     bar.style.left = left + 'px';
-    bar.style.top = (bottom - H) + 'px';
+    bar.style.top = (barBottom - H) + 'px';
     bar.style.width = width + 'px';
     // layout responsivo: some o que não cabe
     ui.time.style.display = width < 300 ? 'none' : 'block';
@@ -417,7 +519,7 @@ window.addEventListener('message', (e) => {
     if (!visible) return;
     if (cur && cur.paused && !dragging && lastMouse) {
       const v = videoAt(lastMouse.x, lastMouse.y);
-      if (v && v !== cur && !v.paused) cur = v;
+      if (v && v !== cur && !v.paused) { cur = v; watch(v); reapply(v); }
     }
     if (!place()) { hide(true); return; }
     refresh();
@@ -458,6 +560,7 @@ window.addEventListener('message', (e) => {
     let best = null;
     for (const v of document.querySelectorAll('video')) {
       if (v.controls) continue; // o vídeo já mostra os controles do navegador
+      if (!flags.mediaAll && hasOwnTimeline(v)) continue; // o site já tem linha do tempo para este vídeo
       const r = v.getBoundingClientRect();
       if (r.width < 140 || r.height < 90) continue;
       if (!(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
@@ -479,7 +582,7 @@ window.addEventListener('message', (e) => {
     if (dragging) return;
     const v = videoAt(e.clientX, e.clientY);
     if (v) {
-      if (v !== cur) { cur = v; lastVol = v.volume || lastVol; }
+      if (v !== cur) { cur = v; lastVol = v.volume || lastVol; watch(v); reapply(v); }
       show();
       scheduleHide();
     } else if (!overBar && visible) {

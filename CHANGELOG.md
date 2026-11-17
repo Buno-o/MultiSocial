@@ -1,4 +1,5 @@
-## Novidades da v1.7.1
+## Novidades da v1.7.2
 
-- **Barra de vídeo — alto-falante**: clicar no ícone de som agora tira e põe o mudo (antes só o slider funcionava, porque o ícone era redesenhado a cada quadro e o clique se perdia). O mesmo valia para o botão de play/pausa.
-- **Barra de vídeo — vídeo certo**: no Instagram há vários vídeos empilhados (o reel atual e os próximos já carregados). A barra às vezes pegava um vídeo escondido, ficava pequena e não controlava nada. Agora ela escolhe o vídeo visível que está tocando e acompanha a troca quando o reel passa sozinho.
+- **Barra de vídeo não cobre mais os botões do site**: se houver botões do próprio site na parte de baixo do vídeo (como o botão de som do Instagram), a barra sobe e fica acima deles.
+- **Som não volta a mutar sozinho**: o Instagram reaplicava o mudo dele toda vez que o vídeo voltava a tocar. Agora a escolha feita na barra vale até você usar o botão de som do próprio site.
+- **Em todos os sites**: a barra deixou de depender de uma lista de sites. Agora o app verifica vídeo a vídeo, em qualquer site, se aquele vídeo já tem linha do tempo própria; se não tiver, a barra aparece. Em Configurações > Vídeos dá para mostrar em todos os vídeos ou desligar.
