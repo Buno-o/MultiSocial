@@ -253,12 +253,18 @@ window.addEventListener('message', (e) => {
     const b = mk('div', { width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none', transition: 'background 80ms' });
     b.title = title;
     b.appendChild(svgIcon(ICON[name]));
+    b.__icon = name;
     b.addEventListener('mouseenter', () => { b.style.background = 'rgba(255,255,255,.14)'; });
     b.addEventListener('mouseleave', () => { b.style.background = 'transparent'; });
     b.addEventListener('click', (e) => { e.preventDefault(); stop(e); onClick(); });
     return b;
   }
-  function setIcon(btn, name) { btn.replaceChildren(svgIcon(ICON[name])); }
+  // só troca o desenho quando o ícone muda: trocar a cada quadro fazia o clique se perder
+  function setIcon(btn, name) {
+    if (btn.__icon === name) return;
+    btn.__icon = name;
+    btn.replaceChildren(svgIcon(ICON[name]));
+  }
 
   function track(kind) {
     // área clicável alta, trilho fino que engrossa no hover
@@ -409,6 +415,10 @@ window.addEventListener('message', (e) => {
   function loop() {
     raf = 0;
     if (!visible) return;
+    if (cur && cur.paused && !dragging && lastMouse) {
+      const v = videoAt(lastMouse.x, lastMouse.y);
+      if (v && v !== cur && !v.paused) cur = v;
+    }
     if (!place()) { hide(true); return; }
     refresh();
     raf = requestAnimationFrame(loop);
@@ -434,20 +444,38 @@ window.addEventListener('message', (e) => {
     hideTimer = setTimeout(() => hide(false), 2200);
   }
 
+  // Escolhe o vídeo que a pessoa está VENDO debaixo do mouse. O Instagram deixa vários vídeos
+  // empilhados (o reel atual + os próximos já carregados, às vezes escondidos): vence o que está
+  // visível e tocando, e entre iguais o maior.
+  function isShown(v) {
+    for (let el = v, i = 0; el && el.nodeType === 1 && i < 12; el = el.parentElement, i++) {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.15) return false;
+    }
+    return true;
+  }
   function videoAt(x, y) {
     let best = null;
     for (const v of document.querySelectorAll('video')) {
       if (v.controls) continue; // o vídeo já mostra os controles do navegador
       const r = v.getBoundingClientRect();
       if (r.width < 140 || r.height < 90) continue;
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-        if (!best || r.width * r.height < best.r.width * best.r.height) best = { v, r };
-      }
+      if (!(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
+      if (!isShown(v)) continue;
+      let score = 0;
+      if (!v.paused && !v.ended) score += 1000;              // tocando agora
+      if (v.readyState >= 2) score += 300;                    // tem imagem carregada
+      if (v.currentTime > 0) score += 100;                    // já começou
+      if (v === cur) score += 50;                             // evita ficar trocando à toa
+      score += Math.min(r.width * r.height, 2000000) / 10000; // maior vence entre iguais
+      if (!best || score > best.score) best = { v, score };
     }
     return best ? best.v : null;
   }
 
+  let lastMouse = null;
   window.addEventListener('mousemove', (e) => {
+    lastMouse = { x: e.clientX, y: e.clientY };
     if (dragging) return;
     const v = videoAt(e.clientX, e.clientY);
     if (v) {

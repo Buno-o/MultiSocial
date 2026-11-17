@@ -1,4 +1,4 @@
-## Novidades da v1.7.0
+## Novidades da v1.7.1
 
-- **Barra de tempo e volume nos vídeos**: ao passar o mouse sobre um vídeo, aparece uma barra com play/pausa, tempo, linha do tempo (clique ou arraste para pular, com prévia do tempo) e volume (arraste, clique no alto-falante para mudo, ou use a roda do mouse). Ela acompanha o tamanho e a posição do vídeo, encolhe em vídeos pequenos e mostra "AO VIVO" em transmissões. Por padrão aparece só nos sites que não têm (Instagram, Threads, sites personalizados…); dá para ligar em todos ou desligar em Configurações > Vídeos.
-- **Aba branca que travava o app**: ao abrir uma aba que ficou muito tempo sem uso, o app confere se a página ainda responde e, se não, recria a aba sozinho. Uma página que para de responder por mais de 5 segundos também é recriada automaticamente, sem precisar reiniciar o app. Os pedidos de permissão (câmera, microfone…) agora sempre aparecem na frente, para não deixar a janela travada esperando uma resposta escondida.
+- **Barra de vídeo — alto-falante**: clicar no ícone de som agora tira e põe o mudo (antes só o slider funcionava, porque o ícone era redesenhado a cada quadro e o clique se perdia). O mesmo valia para o botão de play/pausa.
+- **Barra de vídeo — vídeo certo**: no Instagram há vários vídeos empilhados (o reel atual e os próximos já carregados). A barra às vezes pegava um vídeo escondido, ficava pequena e não controlava nada. Agora ela escolhe o vídeo visível que está tocando e acompanha a troca quando o reel passa sozinho.
