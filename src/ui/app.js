@@ -9,12 +9,65 @@ let tabState = { active: 'home', tabs: [] };
 let selectedIdx = -1;
 
 // ------------------------------------------------------------------ Ícones
-function faviconFor(svc) {
-  // retorna [url, tamanho mínimo aceito]
-  if (svc.icon) return [svc.icon, 1];                                            // logo fixa / buscada (personalizados)
-  if (config.icons && config.icons[svc.id]) return [config.icons[svc.id], 1];    // logo buscada no próprio site
-  if (config.favicons && config.favicons[svc.id]) return [config.favicons[svc.id], 1]; // logo que aparece na aba
-  try { return [`https://www.google.com/s2/favicons?domain=${new URL(svc.url).hostname}&sz=128`, 24]; } catch { return ['', 0]; }
+// ---- Logos: tenta várias fontes ao mesmo tempo e fica com a melhor (maior) que carregar
+const iconCache = new Map();    // id -> url escolhida
+const iconPending = new Map();  // id -> Promise
+function iconCandidates(svc) {
+  const list = [];
+  const add = (u, min) => { if (u && !list.some((x) => x.u === u)) list.push({ u, min }); };
+  add(config.iconBest && config.iconBest[svc.id], 16);   // melhor escolhida antes
+  add(svc.icon, 16);                                     // logo fixa / buscada (personalizados)
+  add(config.icons && config.icons[svc.id], 16);         // logo buscada no próprio site
+  add(config.favicons && config.favicons[svc.id], 16);   // logo que aparece na aba
+  let host = '';
+  try { host = new URL(svc.url).hostname; } catch {}
+  const parts = host.split('.');
+  const base = parts.length > 2 ? parts.slice(-2).join('.') : host;
+  for (const h of [...new Set([host, base])].filter(Boolean)) {
+    add(`https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&url=https://${h}&size=128`, 24);
+    add(`https://www.google.com/s2/favicons?domain=${h}&sz=128`, 24);
+    add(`https://icons.duckduckgo.com/ip3/${h}.ico`, 16);
+  }
+  return list;
+}
+function probeImage(u, timeout = 6000) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    const done = (w) => { clearTimeout(t); img.onload = img.onerror = null; resolve(w); };
+    const t = setTimeout(() => done(0), timeout);
+    img.onload = () => done(img.naturalWidth || 0);
+    img.onerror = () => done(0);
+    img.src = u;
+  });
+}
+function resolveIcon(svc) {
+  if (iconCache.has(svc.id)) return Promise.resolve(iconCache.get(svc.id));
+  if (iconPending.has(svc.id)) return iconPending.get(svc.id);
+  const cands = iconCandidates(svc);
+  const p = Promise.all(cands.map((c) => probeImage(c.u))).then((sizes) => {
+    let best = null;
+    let bestScore = -1;
+    cands.forEach((c, i) => {
+      const w = sizes[i];
+      if (w < c.min) return;
+      const score = Math.min(w, 128) - i * 3;   // maior resolução vence; empate fica com a fonte mais confiável
+      if (score > bestScore) { bestScore = score; best = c.u; }
+    });
+    iconCache.set(svc.id, best);
+    iconPending.delete(svc.id);
+    if (best && (!config.iconBest || config.iconBest[svc.id] !== best)) ms.send('ui:icon-chosen', svc.id, best);
+    return best;
+  });
+  iconPending.set(svc.id, p);
+  return p;
+}
+function applyIconImage(icon, url) {
+  if (!url) return;
+  let img = icon.querySelector('img');
+  if (!img) { img = new Image(); img.referrerPolicy = 'no-referrer'; icon.appendChild(img); }
+  img.onload = () => icon.classList.add('fav-ok');
+  img.src = url;
 }
 function makeIcon(svc, size) {
   const c = svc.color || ['#6c5ce7', '#4834d4'];
@@ -24,16 +77,8 @@ function makeIcon(svc, size) {
   const g = el('span', 'glyph');
   g.textContent = svc.glyph || svc.name.slice(0, 1);
   icon.appendChild(g);
-  const [src, min] = faviconFor(svc);
-  if (src) {
-    const img = new Image();
-    img.referrerPolicy = 'no-referrer';
-    const fallback = svc.icon && config.favicons && config.favicons[svc.id] !== svc.icon ? config.favicons[svc.id] : null;
-    img.onload = () => { if (img.naturalWidth >= min) icon.classList.add('fav-ok'); };
-    img.onerror = () => { if (fallback && img.src !== fallback) img.src = fallback; };
-    img.src = src;
-    icon.appendChild(img);
-  }
+  if (iconCache.has(svc.id)) applyIconImage(icon, iconCache.get(svc.id));
+  else resolveIcon(svc).then((u) => applyIconImage(icon, u));
   return icon;
 }
 function tabFav(t) {

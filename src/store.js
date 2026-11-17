@@ -27,6 +27,7 @@ const DEFAULTS = {
   alive: {},                  // por rede: true = nunca suspender
   mobile: {},                 // por rede: true = modo celular
   icons: {},                  // logos buscadas dos sites
+  iconBest: {},               // melhor logo escolhida entre várias fontes
   iconsFetchedAt: 0,
   faviconsV: 0,
   gen: {},                    // geração da pasta de dados de cada rede (muda ao sair da conta)

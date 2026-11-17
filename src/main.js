@@ -777,7 +777,7 @@ function openBrowserNewTab() {
 function serviceIcon(serviceId) {
   const svc = getService(serviceId);
   if (!svc) return '';
-  return svc.icon || (store.get('icons') || {})[serviceId] || (store.get('favicons') || {})[serviceId] || '';
+  return (store.get('iconBest') || {})[serviceId] || svc.icon || (store.get('icons') || {})[serviceId] || (store.get('favicons') || {})[serviceId] || '';
 }
 async function refreshServiceIcons(force) {
   const week = 7 * 864e5;
@@ -2005,6 +2005,11 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win, { title: 'Pasta de downloads', defaultPath: downloadDir(), properties: ['openDirectory', 'createDirectory'] });
     if (!r.canceled && r.filePaths[0]) { store.set('downloadDir', r.filePaths[0]); sendConfig(); }
   });
+  ipcMain.on('ui:icon-chosen', (_e, id, url) => {
+    if (!getService(id) || !/^https:\/\//i.test(String(url))) return;
+    store.set('iconBest', { ...(store.get('iconBest') || {}), [id]: String(url) });
+    sendTabs();
+  });
   ipcMain.on('ui:detach-tab', (_e, id, x, y) => detachTab(id, x, y));
   ipcMain.on('ui:open-browser', () => openBrowserNewTab());
   ipcMain.on('ui:toggle-mobile', () => { const t = activeTab(); if (t && t.type === 'service') toggleMobile(t.serviceId); });
@@ -2065,7 +2070,7 @@ function registerIpc() {
       }
     } catch {}
     try { await session.defaultSession.clearStorageData(); await session.defaultSession.clearCache(); } catch {}
-    for (const k of ['favicons', 'perms', 'zoom', 'icons']) store.set(k, {});
+    for (const k of ['favicons', 'perms', 'zoom', 'icons', 'iconBest']) store.set(k, {});
     store.set('lastTabs', []);
     store.set('iconsFetchedAt', 0);
     downloads.length = 0;
