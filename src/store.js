@@ -21,6 +21,7 @@ const DEFAULTS = {
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
   order: [],                  // ordem dos ícones no início (drag & drop)
+  micMode: 'natural',         // 'natural' | 'studio' | 'site' (processamento do microfone)
   externalLinks: true,        // links para outros sites abrem no navegador padrão
   suspendMinutes: 15,         // suspende abas inativas (0 = nunca) para economizar RAM
   lazyTabs: true,             // abas restauradas só carregam quando abertas

@@ -5,6 +5,41 @@ const { ipcRenderer, webFrame } = require('electron');
 let flags = {};
 try { flags = ipcRenderer.sendSync('web:flags') || {}; } catch (e) {}
 
+// Qualidade do microfone: desliga a supressão de ruído / ganho automático do navegador,
+// que deixavam a voz picotada e "abafada" (mensagens de voz do WhatsApp, Discord etc.).
+if (flags.mic && flags.mic !== 'site') {
+  const ovr = flags.mic === 'studio'
+    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+  try {
+    webFrame.executeJavaScript(`(() => {
+      try {
+        const OVR = ${JSON.stringify(ovr)};
+        const fix = (c) => {
+          if (!c || !c.audio) return c;
+          const a = (typeof c.audio === 'object') ? Object.assign({}, c.audio) : {};
+          Object.assign(a, OVR);
+          if (a.channelCount == null) a.channelCount = 1;
+          return Object.assign({}, c, { audio: a });
+        };
+        const md = navigator.mediaDevices;
+        if (md && md.getUserMedia && !md.__msMic) {
+          const orig = md.getUserMedia.bind(md);
+          md.getUserMedia = (c) => orig(fix(c));
+          md.__msMic = true;
+        }
+        const ApplyOrig = window.MediaStreamTrack && MediaStreamTrack.prototype.applyConstraints;
+        if (ApplyOrig && !MediaStreamTrack.prototype.__msMic) {
+          MediaStreamTrack.prototype.applyConstraints = function (c) {
+            return ApplyOrig.call(this, this.kind === 'audio' ? Object.assign({}, c || {}, OVR) : c);
+          };
+          MediaStreamTrack.prototype.__msMic = true;
+        }
+      } catch (e) {}
+    })();`);
+  } catch (e) { /* ignora */ }
+}
+
 // Bloqueia chaves de acesso (passkeys/WebAuthn): evita o popup "Segurança do Windows"
 // pedindo pendrive/chave USB e faz Google e outros sites irem direto para a senha.
 if (flags.disablePasskeys) {

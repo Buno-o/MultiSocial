@@ -1968,7 +1968,7 @@ function applyTheme() {
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
     'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay',
-    'order', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
+    'order', 'micMode', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
@@ -2096,7 +2096,7 @@ function registerIpc() {
   ipcMain.on('ui:check-updates', () => checkForUpdates(true));
   ipcMain.on('ui:external', (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
 
-  ipcMain.on('web:flags', (e) => { e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false }; });
+  ipcMain.on('web:flags', (e) => { e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false, mic: store.get('micMode') || 'natural' }; });
   ipcMain.on('ui:reset-perms', () => { store.set('perms', {}); dialog.showMessageBox(win, { type: 'info', message: 'Permissões redefinidas.', detail: 'Os sites vão perguntar de novo antes de usar câmera, microfone, tela ou área de transferência.' }); });
   ipcMain.on('web:notif-click', (e) => {
     const t = tabByWc(e.sender);
