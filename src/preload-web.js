@@ -10,7 +10,9 @@ try { flags = ipcRenderer.sendSync('web:flags') || {}; } catch (e) {}
 if (flags.mic && flags.mic !== 'site') {
   const ovr = flags.mic === 'studio'
     ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    : { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+    : flags.mic === 'balanced'
+      ? { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+      : { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
   try {
     webFrame.executeJavaScript(`(() => {
       try {

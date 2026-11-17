@@ -16,6 +16,10 @@ const store = require('./store');
 app.setName('MultiSocial');
 const cfg = store.init(app.getPath('userData'));
 if (!cfg.hwAccel) app.disableHardwareAcceleration();
+// Microfone no Windows: por padrão o Chromium captura em modo "RAW", que pula o processamento
+// do driver/Windows (redução de ruído do Realtek, Conexant, Waves etc.). Isso deixa um chiado
+// que o Gravador do Windows não tem. Desligando o RAW, o app recebe o mesmo áudio tratado.
+if (cfg.micDriverProcessing !== false) app.commandLine.appendSwitch('disable-features', 'WASAPIRawAudioCapture');
 app.setAppUserModelId('com.buno.multisocial');
 
 if (!app.requestSingleInstanceLock()) {
@@ -1968,12 +1972,12 @@ function applyTheme() {
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
     'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay',
-    'order', 'micMode', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
+    'order', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
   if (key === 'theme') applyTheme();
-  if (key === 'hwAccel') {
+  if (key === 'hwAccel' || key === 'micDriverProcessing') {
     const r = await dialog.showMessageBox(win, {
       type: 'info', message: 'Reiniciar o MultiSocial para aplicar?', buttons: ['Reiniciar agora', 'Depois'], defaultId: 0, noLink: true
     });

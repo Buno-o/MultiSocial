@@ -21,7 +21,8 @@ const DEFAULTS = {
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
   order: [],                  // ordem dos ícones no início (drag & drop)
-  micMode: 'natural',         // 'natural' | 'studio' | 'site' (processamento do microfone)
+  micMode: 'natural',         // 'natural' | 'balanced' | 'studio' | 'site' (processamento do microfone)
+  micDriverProcessing: true,  // usa a redução de ruído do driver/Windows (desliga captura RAW do Chromium)
   externalLinks: true,        // links para outros sites abrem no navegador padrão
   suspendMinutes: 15,         // suspende abas inativas (0 = nunca) para economizar RAM
   lazyTabs: true,             // abas restauradas só carregam quando abertas

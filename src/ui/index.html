@@ -91,10 +91,12 @@
           <span><b>Qualidade do microfone</b><small>Vale para mensagens de voz e chamadas (WhatsApp, Discord, Telegram…). Reabra a aba depois de mudar.</small></span>
           <select id="set-micMode">
             <option value="natural">Natural (recomendado): sem redução de ruído, com anti-eco</option>
+            <option value="balanced">Equilibrado: redução de ruído leve do navegador, sem volume automático</option>
             <option value="studio">Estúdio: som puro, sem nenhum processamento</option>
             <option value="site">Padrão do site (redução de ruído e volume automático)</option>
           </select>
         </label>
+        <label class="row"><span><b>Usar a redução de ruído do Windows/driver</b><small>Recebe o mesmo áudio tratado que o Gravador do Windows usa (tira o chiado de fundo). Reinicia o app.</small></span><input type="checkbox" class="switch" id="set-micDriverProcessing"></label>
       </section>
 
       <section>
