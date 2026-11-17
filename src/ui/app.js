@@ -424,7 +424,7 @@ function showAddModal() {
 
 // ------------------------------------------------------------------ Configurações
 const NUM_KEYS = new Set(['suspendMinutes', 'autoLockMinutes']);
-const SETTING_KEYS = ['micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'lockOnStart', 'lockOnHide', 'autoLockMinutes', 'disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
+const SETTING_KEYS = ['mediaBar', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'lockOnStart', 'lockOnHide', 'autoLockMinutes', 'disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
 function renderSettings() {
   for (const k of SETTING_KEYS) {
     const input = document.getElementById('set-' + k);

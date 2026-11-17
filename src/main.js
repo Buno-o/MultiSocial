@@ -73,7 +73,12 @@ function log(...args) {
   } catch {}
 }
 log('--- MultiSocial', app.getVersion(), 'Electron', process.versions.electron, 'Chrome', process.versions.chrome, process.platform, require('os').release());
-app.on('child-process-gone', (_e, d) => log('processo filho encerrou', d));
+app.on('child-process-gone', (_e, d) => {
+  log('processo filho encerrou', d);
+  if (d && d.type === 'GPU') {
+    setTimeout(() => { for (const t of tabs) t.shown = false; try { layout(); } catch {} }, 1500);
+  }
+});
 process.on('uncaughtException', (e) => log('erro não tratado', String(e && e.stack || e)));
 
 // ---------------------------------------------------------------------------
@@ -265,6 +270,10 @@ async function askPermission(serviceId, perm, details) {
   const p = (async () => {
     const svc = getService(serviceId);
     const what = key === 'media-video' ? 'usar sua câmera e microfone' : key === 'media-audio' ? 'usar seu microfone' : ASK_PERMS[perm];
+    log('pedido de permissão', serviceId, key);
+    // a pergunta trava a janela até ser respondida: garante que ela apareça na frente
+    showMain();
+    try { win.moveTop(); } catch {}
     const r = await dialog.showMessageBox(win, {
       type: 'question',
       title: 'Permissão',
@@ -698,14 +707,34 @@ function ensureView(tab) {
   return view;
 }
 
+// Aba que ficou muito tempo escondida: confere se a página ainda responde; se não, recria
+async function healthCheck(tab) {
+  const wc = tab.view && tab.view.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  if (wc.isCrashed()) { recreateTab(tab, true); return; }
+  const ok = await Promise.race([
+    wc.executeJavaScript('1').then(() => true).catch(() => false),
+    new Promise((r) => setTimeout(() => r(false), 4000))
+  ]);
+  if (!ok && tab.view && tab.view.webContents === wc) {
+    log('aba não respondeu ao voltar, recriando', tab.serviceId);
+    recreateTab(tab, true);
+  } else if (ok && tab.id === activeId) {
+    tab.shown = false;
+    layout();
+  }
+}
+
 // Fecha e recria a página da aba do zero (corrige página travada ou em branco)
-function recreateTab(tab) {
+function recreateTab(tab, hung) {
   if (!tab || tab.type !== 'service') return;
   tab.url = tabUrl(tab);
   if (tab.view) {
     const v = tab.view;
     tab.view = null;
     try { win.contentView.removeChildView(v); } catch {}
+    // página travada: derruba o processo dela na hora (fechar normalmente esperaria a página responder)
+    if (hung) { try { v.webContents.forcefullyCrashRenderer(); } catch {} }
     try { v.webContents.close(); } catch {}
   }
   log('aba recriada', tab.serviceId);
@@ -852,7 +881,13 @@ function activateTab(id) {
   const prev = activeTab();
   if (prev && prev.id !== id) { pauseIfNotBg(prev); prev.lastActive = Date.now(); }
   const next = tabs.find((t) => t.id === id);
-  if (next && next.type === 'service') { next.lastActive = Date.now(); ensureView(next); }
+  if (next && next.type === 'service') {
+    const hiddenFor = Date.now() - (next.lastActive || Date.now());
+    next.lastActive = Date.now();
+    const existed = !!next.view;
+    ensureView(next);
+    if (existed && hiddenFor > 3 * 60000) healthCheck(next);
+  }
   if (findOpen) closeFind();
   activeId = id;
   layout();
@@ -1124,7 +1159,18 @@ function wireWebContents(wc, ctx) {
         setTimeout(() => { try { wc.reload(); } catch {} }, 1500);
       }
     });
-    wc.on('unresponsive', () => log('página não responde', tab.serviceId, wc.getURL()));
+    wc.on('unresponsive', () => {
+      log('página não responde', tab.serviceId, wc.getURL());
+      tab.unresponsiveSince = Date.now();
+      setTimeout(() => {
+        if (!tab.unresponsiveSince || !tab.view || tab.view.webContents !== wc) return;
+        log('página continua travada: recriando a aba', tab.serviceId);
+        tab.unresponsiveSince = 0;
+        if (tab.id === activeId) recreateTab(tab, true);
+        else { try { wc.forcefullyCrashRenderer(); } catch {} suspendTab(tab); }
+      }, 5000);
+    });
+    wc.on('responsive', () => { tab.unresponsiveSince = 0; });
     wc.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3) log('falha ao carregar', tab.serviceId, code, desc, url); });
     wc.on('zoom-changed', (_e, dir) => setZoom(wc, dir === 'in' ? 0.1 : -0.1, tab.serviceId));
   }
@@ -1972,7 +2018,7 @@ function applyTheme() {
 async function setConfig(key, value) {
   const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
     'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay',
-    'order', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
+    'order', 'mediaBar', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
   if (!allowed.includes(key)) return;
   store.set(key, value);
   if (key === 'startWithWindows') applyStartup();
@@ -2100,7 +2146,15 @@ function registerIpc() {
   ipcMain.on('ui:check-updates', () => checkForUpdates(true));
   ipcMain.on('ui:external', (_e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
 
-  ipcMain.on('web:flags', (e) => { e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false, mic: store.get('micMode') || 'natural' }; });
+  ipcMain.on('web:flags', (e) => {
+    const t = tabByWc(e.sender);
+    let sid = t ? t.serviceId : null;
+    if (!sid) { try { const w = BrowserWindow.fromWebContents(e.sender); sid = w && w.__serviceId; } catch {} }
+    const svc = sid ? getService(sid) : null;
+    const mode = store.get('mediaBar') || 'auto';
+    const mediaBar = mode === 'all' || (mode === 'auto' && !(svc && svc.nativeMedia));
+    e.returnValue = { disablePasskeys: store.get('disablePasskeys') !== false, mic: store.get('micMode') || 'natural', mediaBar };
+  });
   ipcMain.on('ui:reset-perms', () => { store.set('perms', {}); dialog.showMessageBox(win, { type: 'info', message: 'Permissões redefinidas.', detail: 'Os sites vão perguntar de novo antes de usar câmera, microfone, tela ou área de transferência.' }); });
   ipcMain.on('web:notif-click', (e) => {
     const t = tabByWc(e.sender);

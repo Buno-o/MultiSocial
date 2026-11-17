@@ -21,6 +21,7 @@ const DEFAULTS = {
   iconSize: 'medium',         // 'small' | 'medium' | 'large'
   hwAccel: true,
   order: [],                  // ordem dos ícones no início (drag & drop)
+  mediaBar: 'auto',           // barra de tempo/volume nos vídeos: 'auto' | 'all' | 'off'
   micMode: 'natural',         // 'natural' | 'balanced' | 'studio' | 'site' (processamento do microfone)
   micDriverProcessing: true,  // usa a redução de ruído do driver/Windows (desliga captura RAW do Chromium)
   externalLinks: true,        // links para outros sites abrem no navegador padrão

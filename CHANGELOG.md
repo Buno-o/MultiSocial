@@ -1,4 +1,4 @@
-## Novidades da v1.6.1
+## Novidades da v1.7.0
 
-- **Chiado no microfone (Windows)**: o navegador embutido capturava o microfone em modo "RAW", que pula a redução de ruído do driver de áudio e do Windows — por isso a gravação do WhatsApp tinha chiado que o Gravador do Windows não tem. Agora o app usa o mesmo áudio tratado pelo Windows/driver (opção "Usar a redução de ruído do Windows/driver", ligada por padrão; reinicia o app).
-- Novo modo de microfone **Equilibrado**: redução de ruído leve do navegador, sem o volume automático que picotava a voz.
+- **Barra de tempo e volume nos vídeos**: ao passar o mouse sobre um vídeo, aparece uma barra com play/pausa, tempo, linha do tempo (clique ou arraste para pular, com prévia do tempo) e volume (arraste, clique no alto-falante para mudo, ou use a roda do mouse). Ela acompanha o tamanho e a posição do vídeo, encolhe em vídeos pequenos e mostra "AO VIVO" em transmissões. Por padrão aparece só nos sites que não têm (Instagram, Threads, sites personalizados…); dá para ligar em todos ou desligar em Configurações > Vídeos.
+- **Aba branca que travava o app**: ao abrir uma aba que ficou muito tempo sem uso, o app confere se a página ainda responde e, se não, recria a aba sozinho. Uma página que para de responder por mais de 5 segundos também é recriada automaticamente, sem precisar reiniciar o app. Os pedidos de permissão (câmera, microfone…) agora sempre aparecem na frente, para não deixar a janela travada esperando uma resposta escondida.
