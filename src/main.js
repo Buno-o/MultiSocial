@@ -567,9 +567,15 @@ function applyTaskbarIdentity() {
 // Bloqueado: o foco do teclado vai direto para o campo do PIN (é só digitar e dar Enter)
 function focusPinField() {
   if (!win || win.isDestroyed()) return;
-  win.webContents.focus();
-  send('lock:focus');
-  setTimeout(() => { if (locked && !win.isDestroyed()) { win.webContents.focus(); send('lock:focus'); } }, 120);
+  // Só foca com a janela em primeiro plano: focar uma janela em segundo plano faz o Windows
+  // destacar o ícone na barra de tarefas pedindo atenção.
+  const doIt = () => {
+    if (!locked || win.isDestroyed() || !win.isVisible() || win.isMinimized() || !win.isFocused()) return;
+    win.webContents.focus();
+    send('lock:focus');
+  };
+  doIt();
+  setTimeout(doIt, 120);
 }
 
 function showMain() {

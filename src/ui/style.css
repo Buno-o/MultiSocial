@@ -286,3 +286,6 @@ kbd { font-family: inherit; font-size: 11px; background: var(--panel2); border: 
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(127,127,140,.35); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+
+/* cursor do PIN só pisca com o app em primeiro plano */
+body.app-blurred #unlock-pin { caret-color: transparent; }

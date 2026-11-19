@@ -513,7 +513,8 @@ $('#custom-form').addEventListener('submit', async (e) => {
 });
 
 function applyConfig() {
-  document.body.className = config.theme === 'light' ? 'theme-light' : 'theme-dark';
+  document.body.classList.toggle('theme-light', config.theme === 'light');
+  document.body.classList.toggle('theme-dark', config.theme !== 'light');
   renderHome();
   renderSettings();
 }
@@ -586,7 +587,9 @@ const focusPin = () => {
   i.select();
 };
 ms.on('lock:focus', focusPin);
-window.addEventListener('focus', focusPin);
+window.addEventListener('focus', () => { document.body.classList.remove('app-blurred'); focusPin(); });
+window.addEventListener('blur', () => document.body.classList.add('app-blurred'));
+if (!document.hasFocus()) document.body.classList.add('app-blurred');
 document.addEventListener('visibilitychange', () => { if (!document.hidden) focusPin(); });
 $('#unlock-form').addEventListener('submit', async (e) => {
   e.preventDefault();
