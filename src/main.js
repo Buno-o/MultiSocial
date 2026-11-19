@@ -540,9 +540,55 @@ function createMainWindow() {
 
 // Faz o ícone fixado na barra de tarefas e a janela aberta serem o MESMO ícone.
 // No portátil, o .exe que roda é uma cópia temporária; aqui dizemos ao Windows qual .exe relançar.
+// .exe "de verdade" do app: no portátil é o arquivo que a pessoa baixou (o que roda é uma cópia
+// temporária que some ao fechar); no instalado é o próprio executável.
+function realExePath() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+}
+// Reinicia o app pelo .exe certo (no portátil, reiniciar pela cópia temporária deixava atalhos quebrados)
+function relaunchApp() {
+  const exe = realExePath();
+  try { app.relaunch(process.env.PORTABLE_EXECUTABLE_FILE ? { execPath: exe, args: [] } : undefined); }
+  catch { app.relaunch(); }
+}
+// Conserta ícones fixados na barra de tarefas / Menu Iniciar que apontam para um MultiSocial.exe
+// que não existe mais (cópia temporária da versão portátil, versão antiga, etc.).
+function repairShortcuts() {
+  if (process.platform !== 'win32') return;
+  const exe = realExePath();
+  const tmp = app.getPath('temp').toLowerCase();
+  const dirs = [
+    path.join(app.getPath('appData'), 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'),
+    path.join(app.getPath('appData'), 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'StartMenu'),
+    path.join(app.getPath('desktop'))
+  ];
+  for (const dir of dirs) {
+    let files = [];
+    try { files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.lnk')); } catch { continue; }
+    for (const f of files) {
+      const lnk = path.join(dir, f);
+      let cur;
+      try { cur = shell.readShortcutLink(lnk); } catch { continue; }
+      const target = String(cur.target || '');
+      const ours = cur.appUserModelId === 'com.buno.multisocial' || /multisocial/i.test(path.basename(target)) || /^multisocial/i.test(f);
+      if (!ours) continue;
+      const broken = !target || !fs.existsSync(target) || target.toLowerCase().startsWith(tmp);
+      if (!broken && cur.appUserModelId === 'com.buno.multisocial') continue;
+      if (!broken && path.resolve(target).toLowerCase() !== path.resolve(exe).toLowerCase()) continue; // outra instalação válida: não mexe
+      try {
+        shell.writeShortcutLink(lnk, 'replace', {
+          target: exe, args: '', cwd: path.dirname(exe), icon: exe, iconIndex: 0,
+          appUserModelId: 'com.buno.multisocial', description: 'MultiSocial'
+        });
+        log('atalho consertado', lnk, 'antes:', target, 'agora:', exe);
+      } catch (e) { log('não consegui consertar atalho', lnk, String(e)); }
+    }
+  }
+}
+
 function applyTaskbarIdentity() {
   if (process.platform !== 'win32') return;
-  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const exe = realExePath();
   try {
     win.setAppDetails({
       appId: 'com.buno.multisocial',
@@ -562,6 +608,7 @@ function applyTaskbarIdentity() {
       if (!same) shell.writeShortcutLink(lnk, fs.existsSync(lnk) ? 'replace' : 'create', opts);
     } catch (e) { log('atalho do Menu Iniciar falhou', String(e)); }
   }
+  repairShortcuts();
 }
 
 // Bloqueado: o foco do teclado vai direto para o campo do PIN (é só digitar e dar Enter)
@@ -2033,7 +2080,7 @@ async function setConfig(key, value) {
     const r = await dialog.showMessageBox(win, {
       type: 'info', message: 'Reiniciar o MultiSocial para aplicar?', buttons: ['Reiniciar agora', 'Depois'], defaultId: 0, noLink: true
     });
-    if (r.response === 0) { saveTabs(); store.saveNow(); app.relaunch(); quitting = true; app.exit(0); }
+    if (r.response === 0) { saveTabs(); store.saveNow(); relaunchApp(); quitting = true; app.exit(0); }
   }
   sendConfig();
 }
@@ -2145,7 +2192,7 @@ function registerIpc() {
     try { fs.rmSync(LOG_DIR, { recursive: true, force: true }); } catch {}
     store.saveNow();
     // reinicia para soltar os arquivos em uso; o que sobrou é apagado na abertura
-    app.relaunch();
+    relaunchApp();
     quitting = true;
     app.exit(0);
   });
