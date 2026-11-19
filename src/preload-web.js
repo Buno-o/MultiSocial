@@ -458,33 +458,48 @@ window.addEventListener('message', (e) => {
   // ---- o site já tem linha do tempo/volume para este vídeo? (verificado vídeo a vídeo, em qualquer site)
   const tlCache = new WeakMap();
   const TL_SEL = 'input[type="range"],progress,[role="slider"],[role="progressbar"],[aria-valuenow]';
-  function looksLikeTimeline(el) {
+  // Uma vez que o site mostrou uma linha do tempo DE VERDADE (um slider que dá para arrastar)
+  // em algum vídeo da página, ele tem player próprio: a barra do app não aparece mais nessa página.
+  // Sites como o X só mostram os controles ao passar o mouse, e sem isso as duas barras brigavam.
+  let pageHasOwnPlayer = false;
+  const ownControls = new WeakSet();
+  // vr = retângulo do vídeo; depth = quantos níveis acima do vídeo está o container analisado
+  function looksLikeTimeline(el, vr, depth) {
     const r = el.getBoundingClientRect();
-    if (r.width >= 50 && r.width >= 2.5 * r.height) return true;            // barra horizontal
-    if (r.width === 0 && r.height === 0 && el.matches('[role="slider"],input[type="range"]')) return true; // escondida até o hover
-    return false;
+    const seek = el.matches('[role="slider"],input[type="range"]');
+    let ok = false;
+    if (r.width >= 50 && r.width >= 2.5 * r.height) {
+      // tem que estar SOBRE o vídeo (ou logo abaixo dele), não em outro vídeo da página
+      ok = r.left < vr.right && r.right > vr.left && r.top >= vr.top - 10 && r.bottom <= vr.bottom + 90;
+    } else if (r.width === 0 && r.height === 0 && seek) {
+      ok = depth <= 3; // escondida até o hover: só conta se estiver bem perto do vídeo
+    }
+    if (ok && seek) pageHasOwnPlayer = true;
+    return ok;
   }
-  function scanForTimeline(root) {
-    for (const el of root.querySelectorAll(TL_SEL)) if (looksLikeTimeline(el)) return true;
+  function scanForTimeline(root, vr, depth) {
+    for (const el of root.querySelectorAll(TL_SEL)) if (looksLikeTimeline(el, vr, depth)) return true;
     for (const el of root.querySelectorAll('*')) {
-      if (el.shadowRoot) for (const x of el.shadowRoot.querySelectorAll(TL_SEL)) if (looksLikeTimeline(x)) return true;
+      if (el.shadowRoot) for (const x of el.shadowRoot.querySelectorAll(TL_SEL)) if (looksLikeTimeline(x, vr, depth)) return true;
     }
     return false;
   }
-  function hasOwnTimeline(v) {
+  function hasOwnTimeline(v, fresh) {
+    if (pageHasOwnPlayer || ownControls.has(v)) return true;
     const now = performance.now();
     const c = tlCache.get(v);
-    if (c && now - c.t < 1500) return c.has;
+    if (!fresh && c && now - c.t < 1500) return c.has;
     const vr = v.getBoundingClientRect();
     let has = false;
     let node = v.parentElement;
     for (let i = 0; i < 6 && node && !has; i++, node = node.parentElement) {
       const nr = node.getBoundingClientRect();
       if (nr.width > vr.width * 1.6 + 60 || nr.height > vr.height * 1.6 + 120) break; // já saiu do player
-      has = scanForTimeline(node);
+      has = scanForTimeline(node, vr, i + 1);
     }
-    if (!has) { const rn = v.getRootNode(); if (rn && rn !== document && rn.host) has = scanForTimeline(rn); }
+    if (!has) { const rn = v.getRootNode(); if (rn && rn !== document && rn.host) has = scanForTimeline(rn, vr, 1); }
     tlCache.set(v, { t: now, has });
+    if (has) ownControls.add(v);
     return has;
   }
 
@@ -501,7 +516,9 @@ window.addEventListener('message', (e) => {
     // sobe a barra se houver botões do próprio site na faixa de baixo do vídeo
     const now = performance.now();
     if (obst.v !== cur || now - obst.t > 500 || Math.abs(obst.bottom - bottom) > 2 || Math.abs(obst.w - width) > 2) {
-      obst = { v: cur, t: now, bottom, w: width, lift: siteButtonsLift(r, left, right, bottom) };
+      const lift = siteButtonsLift(r, left, right, bottom);
+      const keep = visible && obst.v === cur ? Math.max(obst.lift, lift) : lift;
+      obst = { v: cur, t: now, bottom, w: width, lift: keep };
     }
     const barBottom = bottom - obst.lift;
     bar.style.left = left + 'px';
@@ -517,6 +534,7 @@ window.addEventListener('message', (e) => {
   function loop() {
     raf = 0;
     if (!visible) return;
+    if (cur && !flags.mediaAll && !dragging && hasOwnTimeline(cur)) { hide(true); return; }
     if (cur && cur.paused && !dragging && lastMouse) {
       const v = videoAt(lastMouse.x, lastMouse.y);
       if (v && v !== cur && !v.paused) { cur = v; watch(v); reapply(v); }
@@ -560,11 +578,11 @@ window.addEventListener('message', (e) => {
     let best = null;
     for (const v of document.querySelectorAll('video')) {
       if (v.controls) continue; // o vídeo já mostra os controles do navegador
-      if (!flags.mediaAll && hasOwnTimeline(v)) continue; // o site já tem linha do tempo para este vídeo
       const r = v.getBoundingClientRect();
       if (r.width < 140 || r.height < 90) continue;
       if (!(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
       if (!isShown(v)) continue;
+      if (!flags.mediaAll && hasOwnTimeline(v)) continue; // o site já tem linha do tempo para este vídeo
       let score = 0;
       if (!v.paused && !v.ended) score += 1000;              // tocando agora
       if (v.readyState >= 2) score += 300;                    // tem imagem carregada
@@ -577,16 +595,33 @@ window.addEventListener('message', (e) => {
   }
 
   let lastMouse = null;
+  let pendingVideo = null;
+  let pendingTimer = 0;
   window.addEventListener('mousemove', (e) => {
     lastMouse = { x: e.clientX, y: e.clientY };
     if (dragging) return;
     const v = videoAt(e.clientX, e.clientY);
     if (v) {
-      if (v !== cur) { cur = v; lastVol = v.volume || lastVol; watch(v); reapply(v); }
-      show();
-      scheduleHide();
-    } else if (!overBar && visible) {
-      scheduleHide();
+      if (visible && v === cur) { show(); scheduleHide(); return; }
+      // vídeo novo (ou barra escondida): espera 350 ms e confere de novo se o site mostrou controles próprios
+      if (pendingVideo !== v) {
+        pendingVideo = v;
+        clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(() => {
+          const pv = pendingVideo;
+          pendingVideo = null;
+          if (!pv || !pv.isConnected || !lastMouse) return;
+          if (!flags.mediaAll && hasOwnTimeline(pv, true)) return;
+          if (videoAt(lastMouse.x, lastMouse.y) !== pv) return;
+          if (pv !== cur) { cur = pv; lastVol = pv.volume || lastVol; watch(pv); reapply(pv); obst = { v: null, t: 0, bottom: 0, w: 0, lift: 0 }; }
+          show();
+          scheduleHide();
+        }, 350);
+      }
+    } else {
+      pendingVideo = null;
+      clearTimeout(pendingTimer);
+      if (!overBar && visible) scheduleHide();
     }
   }, { passive: true, capture: true });
   document.addEventListener('mouseleave', () => { if (!dragging) hide(false); }, { passive: true });

@@ -1,5 +1,3 @@
-## Novidades da v1.8.0
+## Novidades da v1.8.1
 
-- **Sem bandeja**: o MultiSocial não fica mais na bandeja do sistema. O botão **−** minimiza normalmente para a barra de tarefas, e o **X** fecha o programa.
-- **Confirmação ao fechar**: ao clicar no X aparece "Deseja fechar o MultiSocial?" (Fechar / Cancelar), com a opção "Não perguntar de novo". Dá para religar em Configurações > Geral > "Perguntar antes de fechar".
-- "Iniciar com o Windows" e "Iniciar minimizado" agora abrem minimizado na barra de tarefas. "Bloquear ao minimizar" continua funcionando.
+- **Barra de vídeo no X (e sites parecidos)**: o X só mostra a linha do tempo dele quando o mouse passa no vídeo. No primeiro instante a barra do app aparecia, depois a do X surgia e as duas ficavam brigando (a do app sumia e voltava). Agora a barra do app espera um instante antes de aparecer e confere de novo; se o site tem player próprio, ela não aparece mais naquela página. Também não fica mais subindo e descendo para desviar dos botões do site.
