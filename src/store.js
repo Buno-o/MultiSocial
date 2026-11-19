@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULTS = {
-  closeAction: null,          // null = perguntar | 'tray' | 'quit'
-  trayBalloonShown: false,
+  confirmClose: true,         // perguntar antes de fechar no X
   restoreTabs: true,
   lastTabs: [],
   startWithWindows: false,

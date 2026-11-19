@@ -72,16 +72,9 @@
 
       <section>
         <h2>Geral</h2>
-        <label class="row">
-          <span><b>Ao fechar a janela (X)</b><small>O que o MultiSocial faz quando você clica em fechar.</small></span>
-          <select id="set-closeAction">
-            <option value="tray">Minimizar para a bandeja</option>
-            <option value="quit">Fechar o programa</option>
-            <option value="">Perguntar na próxima vez</option>
-          </select>
-        </label>
-        <label class="row"><span><b>Iniciar com o Windows</b><small>Abre minimizado na bandeja ao ligar o PC.</small></span><input type="checkbox" class="switch" id="set-startWithWindows"></label>
-        <label class="row"><span><b>Iniciar minimizado</b><small>Abre direto na bandeja, sem mostrar a janela.</small></span><input type="checkbox" class="switch" id="set-startMinimized"></label>
+        <label class="row"><span><b>Perguntar antes de fechar</b><small>Ao clicar no X, confirma se você quer mesmo fechar o MultiSocial.</small></span><input type="checkbox" class="switch" id="set-confirmClose"></label>
+        <label class="row"><span><b>Iniciar com o Windows</b><small>Abre minimizado na barra de tarefas ao ligar o PC.</small></span><input type="checkbox" class="switch" id="set-startWithWindows"></label>
+        <label class="row"><span><b>Iniciar minimizado</b><small>Abre minimizado na barra de tarefas, sem mostrar a janela.</small></span><input type="checkbox" class="switch" id="set-startMinimized"></label>
         <label class="row"><span><b>Restaurar abas ao abrir</b><small>Reabre as redes que estavam abertas na última vez.</small></span><input type="checkbox" class="switch" id="set-restoreTabs"></label>
       </section>
 
@@ -133,7 +126,7 @@
         <h2>Bloqueio por PIN</h2>
         <div class="row"><span><b>PIN de acesso</b><small id="pin-status">Nenhum PIN definido.</small></span><span class="btns"><button class="btn primary" id="pin-set">Definir PIN</button><button class="btn danger" id="pin-remove">Remover</button></span></div>
         <label class="row"><span><b>Bloquear ao abrir o app</b></span><input type="checkbox" class="switch" id="set-lockOnStart"></label>
-        <label class="row"><span><b>Bloquear ao minimizar ou ir para a bandeja</b></span><input type="checkbox" class="switch" id="set-lockOnHide"></label>
+        <label class="row"><span><b>Bloquear ao minimizar</b></span><input type="checkbox" class="switch" id="set-lockOnHide"></label>
         <label class="row">
           <span><b>Bloquear após o PC ficar inativo</b></span>
           <select id="set-autoLockMinutes">

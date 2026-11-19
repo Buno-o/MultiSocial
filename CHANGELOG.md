@@ -1,4 +1,5 @@
-## Novidades da v1.7.5
+## Novidades da v1.8.0
 
-- **Ícone fixado abre na hora**: o .exe portátil descompacta o app inteiro a cada abertura, o que fazia o clique no ícone fixado demorar vários segundos — mesmo com o app já aberto na bandeja. Agora a versão portátil guarda uma cópia já descompactada em `%LOCALAPPDATA%\MultiSocial\app` e aponta o ícone fixado, o Menu Iniciar e o "Iniciar com o Windows" para ela. A cópia é atualizada sozinha a cada versão nova.
-- **Nomes fixos dos arquivos**: os downloads passam a se chamar `MultiSocial-Portable.exe` e `MultiSocial-Setup.exe`, independente da versão.
+- **Sem bandeja**: o MultiSocial não fica mais na bandeja do sistema. O botão **−** minimiza normalmente para a barra de tarefas, e o **X** fecha o programa.
+- **Confirmação ao fechar**: ao clicar no X aparece "Deseja fechar o MultiSocial?" (Fechar / Cancelar), com a opção "Não perguntar de novo". Dá para religar em Configurações > Geral > "Perguntar antes de fechar".
+- "Iniciar com o Windows" e "Iniciar minimizado" agora abrem minimizado na barra de tarefas. "Bloquear ao minimizar" continua funcionando.

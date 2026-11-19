@@ -1,6 +1,6 @@
 // MultiSocial — processo principal
 const {
-  app, BrowserWindow, WebContentsView, ipcMain, Menu, Tray, dialog, shell,
+  app, BrowserWindow, WebContentsView, ipcMain, Menu, dialog, shell,
   session, nativeImage, Notification, clipboard, net, powerMonitor
 } = require('electron');
 const { spawn, execFile } = require('child_process');
@@ -47,8 +47,8 @@ const THEMES = {
 };
 
 let win = null;
-let tray = null;
 let quitting = false;
+let closePromptOpen = false;
 let tabs = [];            // { id, type:'service'|'settings', serviceId, view, title, favicon, badge, loading, muted, audible }
 let activeId = 'home';
 let nextTabId = 1;
@@ -454,14 +454,16 @@ function createMainWindow() {
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
   win.removeMenu();
 
-  const startHidden = process.argv.includes('--hidden') || store.get('startMinimized');
-  win.once('ready-to-show', () => { if (!startHidden) win.show(); });
+  // "Iniciar minimizado" / ao ligar o PC: abre minimizado na barra de tarefas (sem bandeja)
+  const startMin = process.argv.includes('--hidden') || process.argv.includes('--minimized') || store.get('startMinimized');
+  win.once('ready-to-show', () => {
+    if (startMin) { win.showInactive(); win.minimize(); } else win.show();
+  });
 
   win.on('resize', layout);
-  // janela minimizada ou na bandeja também conta como "segundo plano"
+  // janela minimizada também conta como "segundo plano"
   win.on('minimize', () => { pauseIfNotBg(activeTab()); if (hasPin() && store.get('lockOnHide')) lockApp(); });
-  win.on('hide', () => { pauseIfNotBg(activeTab()); if (hasPin() && store.get('lockOnHide')) lockApp(); });
-  // ao voltar da bandeja/minimizado, força o redesenho da aba atual
+  // ao voltar de minimizado, força o redesenho da aba atual
   const redraw = () => { const t = activeTab(); if (t) t.shown = false; layout(); };
   win.on('show', redraw);
   win.on('restore', redraw);
@@ -503,38 +505,27 @@ function createMainWindow() {
     saveBounds();
     if (quitting) return;
     e.preventDefault();
-    let action = store.get('closeAction');
-    if (!action) {
+    // X = fechar o programa (não existe mais bandeja). Pergunta antes, se a opção estiver ligada.
+    if (store.get('confirmClose') !== false) {
+      if (closePromptOpen) return;
+      closePromptOpen = true;
+      showMain();
       const r = await dialog.showMessageBox(win, {
         type: 'question',
         title: 'MultiSocial',
-        message: 'Deseja minimizar o MultiSocial para a bandeja do sistema?',
-        detail: 'Minimizado na bandeja, o MultiSocial continua aberto em segundo plano e você segue recebendo as notificações das suas redes.\n\nEssa pergunta só aparece agora. Você pode mudar isso depois em Configurações.',
-        buttons: ['Minimizar para a bandeja', 'Fechar o programa', 'Cancelar'],
+        message: 'Deseja fechar o MultiSocial?',
+        detail: 'Com o app fechado você deixa de receber as notificações das suas redes.',
+        buttons: ['Fechar', 'Cancelar'],
         defaultId: 0,
-        cancelId: 2,
+        cancelId: 1,
+        checkboxLabel: 'Não perguntar de novo',
+        checkboxChecked: false,
         noLink: true
-      });
-      if (r.response === 2) return;
-      action = r.response === 0 ? 'tray' : 'quit';
-      store.set('closeAction', action);
-      sendConfig();
+      }).finally(() => { closePromptOpen = false; });
+      if (r.response !== 0) return;
+      if (r.checkboxChecked) { store.set('confirmClose', false); sendConfig(); }
     }
-    if (action === 'tray') {
-      win.hide();
-      if (!store.get('trayBalloonShown') && tray && process.platform === 'win32') {
-        store.set('trayBalloonShown', true);
-        try {
-          tray.displayBalloon({
-            title: 'MultiSocial continua aberto',
-            content: 'Clique no ícone da bandeja para voltar. Para sair, clique com o botão direito > Sair.',
-            iconType: 'info'
-          });
-        } catch {}
-      }
-    } else {
-      quitApp();
-    }
+    quitApp();
   });
 }
 
@@ -1066,53 +1057,23 @@ function detachTab(id, screenX, screenY) {
 }
 
 // ---------------------------------------------------------------------------
-// Badges / bandeja
+// Badges (contador de não lidas no ícone da barra de tarefas)
 // ---------------------------------------------------------------------------
 let lastBadgeTotal = 0;
 let overlayImg = null;
 function updateBadges() {
   const total = tabs.reduce((a, t) => a + (t.badge || 0), 0);
-  if (tray) tray.setToolTip(total ? `MultiSocial — ${total} não lida(s)` : 'MultiSocial');
   if (win && process.platform === 'win32') {
     if (!overlayImg) overlayImg = nativeImage.createFromPath(path.join(ASSETS, 'badge.png'));
     win.setOverlayIcon(total ? overlayImg : null, total ? `${total} não lidas` : '');
   }
   if (total > lastBadgeTotal && win && !win.isFocused() && store.get('flashTaskbar')) win.flashFrame(true);
   lastBadgeTotal = total;
-  rebuildTrayMenu();
 }
 
 function parseBadge(title) {
   const m = /\((\d+)\+?\)/.exec(title || '');
   return m ? parseInt(m[1], 10) : 0;
-}
-
-function createTray() {
-  tray = new Tray(nativeImage.createFromPath(path.join(ASSETS, 'tray.png')));
-  tray.setToolTip('MultiSocial');
-  tray.on('click', () => {
-    if (win.isVisible() && win.isFocused()) win.hide();
-    else showMain();
-  });
-  rebuildTrayMenu();
-}
-
-function rebuildTrayMenu() {
-  if (!tray) return;
-  const open = tabs.filter((t) => t.type === 'service').map((t) => {
-    const s = getService(t.serviceId);
-    return { label: `${s ? s.name : 'Aba'}${t.badge ? `  (${t.badge})` : ''}`, click: () => { showMain(); activateTab(t.id); } };
-  });
-  const tpl = [
-    { label: 'Abrir MultiSocial', click: showMain },
-    { type: 'separator' },
-    ...(open.length ? [...open, { type: 'separator' }] : []),
-    ...(hasPin() ? [{ label: locked ? 'Bloqueado' : 'Bloquear agora', enabled: !locked, click: lockApp }] : []),
-    { label: 'Configurações', click: () => { showMain(); openSettingsTab(); } },
-    { label: 'Verificar atualizações', click: () => { showMain(); checkForUpdates(true); } },
-    { label: 'Sair', click: quitApp }
-  ];
-  tray.setContextMenu(Menu.buildFromTemplate(tpl));
 }
 
 // ---------------------------------------------------------------------------
@@ -2050,7 +2011,6 @@ function lockApp() {
   layout();
   send('lock', true);
   focusPinField();
-  rebuildTrayMenu();
   log('app bloqueado');
 }
 function unlockApp(pin) {
@@ -2069,7 +2029,6 @@ function unlockApp(pin) {
   send('lock', false);
   const wc = activeWc();
   if (wc) wc.focus();
-  rebuildTrayMenu();
   return { ok: true };
 }
 function setPin(current, next) {
@@ -2111,7 +2070,7 @@ function applyStartup() {
     app.setLoginItemSettings({
       openAtLogin: !!store.get('startWithWindows'),
       path: exe,
-      args: ['--hidden']
+      args: ['--minimized']
     });
   } catch {}
 }
@@ -2123,7 +2082,7 @@ function applyTheme() {
 }
 
 async function setConfig(key, value) {
-  const allowed = ['closeAction', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
+  const allowed = ['confirmClose', 'restoreTabs', 'startWithWindows', 'startMinimized', 'notifications', 'flashTaskbar',
     'askDownload', 'hidden', 'dock', 'theme', 'iconSize', 'hwAccel', 'downloadDir', 'autoUpdateCheck', 'disablePasskeys', 'bgPlay',
     'order', 'mediaBar', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'alive', 'lockOnStart', 'lockOnHide', 'autoLockMinutes'];
   if (!allowed.includes(key)) return;
@@ -2284,7 +2243,6 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   registerIpc();
   createMainWindow();
-  createTray();
   applyStartup();
 
   // sites personalizados antigos sem logo

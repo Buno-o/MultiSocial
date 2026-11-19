@@ -424,7 +424,7 @@ function showAddModal() {
 
 // ------------------------------------------------------------------ Configurações
 const NUM_KEYS = new Set(['suspendMinutes', 'autoLockMinutes']);
-const SETTING_KEYS = ['mediaBar', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'lockOnStart', 'lockOnHide', 'autoLockMinutes', 'disablePasskeys', 'autoUpdateCheck', 'closeAction', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
+const SETTING_KEYS = ['mediaBar', 'micMode', 'micDriverProcessing', 'externalLinks', 'suspendMinutes', 'lazyTabs', 'lockOnStart', 'lockOnHide', 'autoLockMinutes', 'disablePasskeys', 'autoUpdateCheck', 'confirmClose', 'startWithWindows', 'startMinimized', 'restoreTabs', 'notifications', 'flashTaskbar', 'askDownload', 'theme', 'iconSize', 'hwAccel'];
 function renderSettings() {
   for (const k of SETTING_KEYS) {
     const input = document.getElementById('set-' + k);
@@ -488,7 +488,6 @@ for (const k of SETTING_KEYS) {
   if (!input) continue;
   input.addEventListener('change', () => {
     let v = input.type === 'checkbox' ? input.checked : input.value;
-    if (k === 'closeAction' && v === '') v = null;
     if (NUM_KEYS.has(k)) v = Number(v) || 0;
     ms.invoke('ui:set-config', k, v);
   });
