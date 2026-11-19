@@ -1,7 +1,7 @@
 {
   "name": "multisocial",
   "productName": "MultiSocial",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "Todas as suas redes sociais em um só app, com abas, PiP e mais.",
   "main": "src/main.js",
   "author": "Buno",
@@ -38,10 +38,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "MultiSocial",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-Portable.${ext}"
+      "artifactName": "${productName}-Portable.${ext}"
     },
     "electronFuses": {
       "runAsNode": false,

@@ -56,13 +56,13 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: CHANGELOG.md
           files: |
-            dist/MultiSocial-Setup-*.exe
-            dist/MultiSocial-*-Portable.exe
+            dist/MultiSocial-Setup.exe
+            dist/MultiSocial-Portable.exe
 
       - name: Anexar à Release publicada
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/MultiSocial-Setup-*.exe
-            dist/MultiSocial-*-Portable.exe
+            dist/MultiSocial-Setup.exe
+            dist/MultiSocial-Portable.exe

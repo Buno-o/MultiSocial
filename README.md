@@ -51,6 +51,8 @@ npm start            # roda em modo desenvolvimento
 npm run dist         # gera instalador + portable em dist/ (no Windows)
 ```
 
+Downloads diretos da última versão: [MultiSocial-Portable.exe](https://github.com/Buno-o/MultiSocial/releases/latest/download/MultiSocial-Portable.exe) · [MultiSocial-Setup.exe](https://github.com/Buno-o/MultiSocial/releases/latest/download/MultiSocial-Setup.exe).
+
 O workflow `.github/workflows/build.yml` compila o instalador e o portable no GitHub Actions a cada push na `main`.
 
 ## Observações

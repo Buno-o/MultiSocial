@@ -538,28 +538,78 @@ function createMainWindow() {
   });
 }
 
-// Faz o ícone fixado na barra de tarefas e a janela aberta serem o MESMO ícone.
-// No portátil, o .exe que roda é uma cópia temporária; aqui dizemos ao Windows qual .exe relançar.
-// .exe "de verdade" do app: no portátil é o arquivo que a pessoa baixou (o que roda é uma cópia
-// temporária que some ao fechar); no instalado é o próprio executável.
-function realExePath() {
-  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+// ---------------------------------------------------------------------------
+// Versão portátil: abertura rápida
+// O .exe portátil descompacta o app inteiro (~100 MB) numa pasta temporária a CADA abertura, o que
+// leva vários segundos — inclusive quando o app já está aberto na bandeja e você clica no ícone
+// fixado. Para abrir na hora, o app guarda uma cópia já descompactada numa pasta fixa
+// (%LOCALAPPDATA%\MultiSocial\app) e aponta o ícone fixado, o Menu Iniciar e o "Iniciar com o Windows" para ela.
+// O .exe portátil continua funcionando normalmente.
+// ---------------------------------------------------------------------------
+const FAST_DIR = process.platform === 'win32'
+  ? path.join(process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), 'MultiSocial', 'app')
+  : '';
+const FAST_EXE = FAST_DIR ? path.join(FAST_DIR, path.basename(process.execPath)) : '';
+const FAST_VERSION_FILE = FAST_DIR ? path.join(FAST_DIR, 'multisocial-version.txt') : '';
+const runningFromFastCopy = !!FAST_DIR && path.resolve(process.execPath).toLowerCase().startsWith(path.resolve(FAST_DIR).toLowerCase() + path.sep);
+const isPortableMode = !!process.env.PORTABLE_EXECUTABLE_FILE || runningFromFastCopy;
+if (process.env.PORTABLE_EXECUTABLE_FILE) store.set('portableExe', process.env.PORTABLE_EXECUTABLE_FILE);
+
+function fastCopyReady() {
+  try { return fs.existsSync(FAST_EXE) && fs.readFileSync(FAST_VERSION_FILE, 'utf8').trim() === app.getVersion(); } catch { return false; }
 }
+// O .exe que os atalhos devem abrir
+function launchTarget() {
+  if (runningFromFastCopy) return process.execPath;
+  if (process.env.PORTABLE_EXECUTABLE_FILE) return fastCopyReady() ? FAST_EXE : process.env.PORTABLE_EXECUTABLE_FILE;
+  return process.execPath;
+}
+// .exe portátil que a pessoa baixou (usado pelo atualizador)
+function portableExePath() {
+  const p = process.env.PORTABLE_EXECUTABLE_FILE || store.get('portableExe') || '';
+  return p && fs.existsSync(p) ? p : '';
+}
+// Copia o app descompactado para a pasta fixa (em segundo plano, sem travar o app)
+async function syncFastCopy() {
+  if (!process.env.PORTABLE_EXECUTABLE_FILE || !FAST_DIR || !app.isPackaged) return;
+  if (fastCopyReady()) { applyTaskbarIdentity(); return; }
+  const src = path.dirname(process.execPath);
+  const tmpDir = FAST_DIR + '.novo';
+  try {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    await fs.promises.cp(src, tmpDir, { recursive: true, force: true });
+    await fs.promises.writeFile(path.join(tmpDir, 'multisocial-version.txt'), app.getVersion());
+    await fs.promises.rm(FAST_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    await fs.promises.rename(tmpDir, FAST_DIR);
+    log('cópia rápida do app atualizada', FAST_DIR, app.getVersion());
+    applyTaskbarIdentity();
+    applyStartup();
+  } catch (e) {
+    log('cópia rápida falhou', String(e && e.message || e));
+    try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// .exe "de verdade" para reiniciar o app
+function realExePath() { return launchTarget(); }
 // Reinicia o app pelo .exe certo (no portátil, reiniciar pela cópia temporária deixava atalhos quebrados)
 function relaunchApp() {
-  const exe = realExePath();
-  try { app.relaunch(process.env.PORTABLE_EXECUTABLE_FILE ? { execPath: exe, args: [] } : undefined); }
+  const exe = launchTarget();
+  try { app.relaunch(exe !== process.execPath ? { execPath: exe, args: [] } : undefined); }
   catch { app.relaunch(); }
 }
-// Conserta ícones fixados na barra de tarefas / Menu Iniciar que apontam para um MultiSocial.exe
-// que não existe mais (cópia temporária da versão portátil, versão antiga, etc.).
+// Conserta ícones fixados na barra de tarefas / Menu Iniciar / Área de Trabalho do MultiSocial:
+// os quebrados (apontando para a cópia temporária ou arquivo apagado) e, no portátil, os que
+// apontam para o .exe portátil (lento) passam a apontar para a cópia rápida.
 function repairShortcuts() {
   if (process.platform !== 'win32') return;
-  const exe = realExePath();
+  const exe = launchTarget();
   const tmp = app.getPath('temp').toLowerCase();
+  const portable = (store.get('portableExe') || '').toLowerCase();
   const dirs = [
     path.join(app.getPath('appData'), 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'),
     path.join(app.getPath('appData'), 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'StartMenu'),
+    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
     path.join(app.getPath('desktop'))
   ];
   for (const dir of dirs) {
@@ -570,25 +620,29 @@ function repairShortcuts() {
       let cur;
       try { cur = shell.readShortcutLink(lnk); } catch { continue; }
       const target = String(cur.target || '');
+      const t = target.toLowerCase();
       const ours = cur.appUserModelId === 'com.buno.multisocial' || /multisocial/i.test(path.basename(target)) || /^multisocial/i.test(f);
       if (!ours) continue;
-      const broken = !target || !fs.existsSync(target) || target.toLowerCase().startsWith(tmp);
-      if (!broken && cur.appUserModelId === 'com.buno.multisocial') continue;
-      if (!broken && path.resolve(target).toLowerCase() !== path.resolve(exe).toLowerCase()) continue; // outra instalação válida: não mexe
+      if (path.resolve(target || '.').toLowerCase() === path.resolve(exe).toLowerCase() && cur.appUserModelId === 'com.buno.multisocial') continue;
+      const broken = !target || !fs.existsSync(target) || t.startsWith(tmp);
+      const portableSlow = isPortableMode && (t === portable || (FAST_DIR && t.startsWith(FAST_DIR.toLowerCase())));
+      if (!broken && !portableSlow) continue; // outra instalação válida: não mexe
       try {
         shell.writeShortcutLink(lnk, 'replace', {
           target: exe, args: '', cwd: path.dirname(exe), icon: exe, iconIndex: 0,
           appUserModelId: 'com.buno.multisocial', description: 'MultiSocial'
         });
-        log('atalho consertado', lnk, 'antes:', target, 'agora:', exe);
-      } catch (e) { log('não consegui consertar atalho', lnk, String(e)); }
+        log('atalho ajustado', lnk, 'antes:', target, 'agora:', exe);
+      } catch (e) { log('não consegui ajustar atalho', lnk, String(e)); }
     }
   }
 }
 
+// Faz o ícone fixado na barra de tarefas e a janela aberta serem o MESMO ícone, e diz ao
+// Windows qual .exe abrir pelo ícone fixado.
 function applyTaskbarIdentity() {
-  if (process.platform !== 'win32') return;
-  const exe = realExePath();
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  const exe = launchTarget();
   try {
     win.setAppDetails({
       appId: 'com.buno.multisocial',
@@ -599,10 +653,10 @@ function applyTaskbarIdentity() {
     });
   } catch (e) { log('setAppDetails falhou', String(e)); }
   // atalho no Menu Iniciar com o mesmo ID (o instalador já cria o dele)
-  if (process.env.PORTABLE_EXECUTABLE_FILE) {
+  if (isPortableMode) {
     try {
       const lnk = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'MultiSocial.lnk');
-      const opts = { target: exe, appUserModelId: 'com.buno.multisocial', icon: exe, iconIndex: 0, description: 'MultiSocial' };
+      const opts = { target: exe, args: '', cwd: path.dirname(exe), appUserModelId: 'com.buno.multisocial', icon: exe, iconIndex: 0, description: 'MultiSocial' };
       let same = false;
       try { const cur = shell.readShortcutLink(lnk); same = cur.target === exe && cur.appUserModelId === 'com.buno.multisocial'; } catch {}
       if (!same) shell.writeShortcutLink(lnk, fs.existsSync(lnk) ? 'replace' : 'create', opts);
@@ -1855,7 +1909,7 @@ async function checkForUpdates(manual = false) {
     }
     if (!manual && store.get('skipVersion') === latest) return;
 
-    const portable = !!process.env.PORTABLE_EXECUTABLE_FILE;
+    const portable = isPortableMode && !!portableExePath();
     const assets = rel.assets || [];
     const asset = portable
       ? assets.find((a) => /portable.*\.exe$/i.test(a.name))
@@ -1922,7 +1976,7 @@ async function installUpdate(asset, portable) {
 
   if (portable) {
     // troca o .exe portátil depois que o app fechar e abre a nova versão
-    const target = process.env.PORTABLE_EXECUTABLE_FILE;
+    const target = portableExePath();
     const script = path.join(dir, 'atualizar.cmd');
     fs.writeFileSync(script, [
       '@echo off',
@@ -2052,7 +2106,7 @@ function sendConfig() {
 
 function applyStartup() {
   if (process.platform !== 'win32' && process.platform !== 'darwin') return;
-  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const exe = launchTarget();
   try {
     app.setLoginItemSettings({
       openAtLogin: !!store.get('startWithWindows'),
@@ -2260,6 +2314,7 @@ app.whenReady().then(() => {
   }
 
   setInterval(hibernateTick, 60000);
+  setTimeout(() => syncFastCopy(), 6000);
   // vigia: se a aba visível ficar mais de 30s "carregando", recarrega (até 2 vezes)
   setInterval(() => {
     const t = activeTab();
