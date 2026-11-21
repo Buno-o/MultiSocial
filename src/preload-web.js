@@ -627,3 +627,10 @@ window.addEventListener('message', (e) => {
   document.addEventListener('mouseleave', () => { if (!dragging) hide(false); }, { passive: true });
   window.addEventListener('blur', () => { if (!dragging) hide(true); });
 })();
+
+// Uso do app (para o bloqueio automático por inatividade) — no máximo um aviso a cada 5 s
+(() => {
+  let last = 0;
+  const ping = () => { const n = Date.now(); if (n - last > 5000) { last = n; ipcRenderer.send('web:activity'); } };
+  for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) window.addEventListener(ev, ping, { passive: true, capture: true });
+})();

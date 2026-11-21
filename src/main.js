@@ -48,6 +48,8 @@ const THEMES = {
 
 let win = null;
 let quitting = false;
+let lastActivity = Date.now();   // último uso do MultiSocial (mouse, teclado, foco)
+function touchActivity() { lastActivity = Date.now(); }
 let closePromptOpen = false;
 let tabs = [];            // { id, type:'service'|'settings', serviceId, view, title, favicon, badge, loading, muted, audible }
 let activeId = 'home';
@@ -419,6 +421,12 @@ function downloadsMenu() {
       sendDownloads();
     }
   });
+  items.push({ type: 'separator' });
+  items.push({
+    label: updateBusy ? 'Verificando atualizações…' : `Verificar atualizações do MultiSocial (v${app.getVersion()})`,
+    enabled: !updateBusy,
+    click: () => checkForUpdates(true)
+  });
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 function saveUrlAs(wc, url) {
@@ -480,6 +488,7 @@ function createMainWindow() {
   });
   win.on('focus', () => {
     win.flashFrame(false);
+    if (!locked) touchActivity();
     const at = activeTab();
     if (at && at.view && !locked) { try { at.view.webContents.invalidate(); } catch {} }
     if (locked) { focusPinField(); return; }
@@ -498,6 +507,7 @@ function createMainWindow() {
   win.on('moved', saveBounds);
 
   win.webContents.on('before-input-event', (e, input) => {
+    if (!locked) touchActivity();
     if (handleShortcut(input)) e.preventDefault();
   });
 
@@ -1161,6 +1171,7 @@ function wireWebContents(wc, ctx) {
   });
 
   wc.on('before-input-event', (e, input) => {
+    if (!locked) touchActivity();
     if (handleShortcut(input, ctx)) e.preventDefault();
   });
 
@@ -2023,6 +2034,7 @@ function unlockApp(pin) {
   }
   pinFails = 0;
   locked = false;
+  touchActivity();
   for (const w of hiddenByLock) if (!w.isDestroyed()) w.show();
   hiddenByLock.clear();
   layout();
@@ -2102,6 +2114,20 @@ async function setConfig(key, value) {
 // IPC com a interface
 // ---------------------------------------------------------------------------
 function registerIpc() {
+  // Bloqueado: a interface só pode desbloquear e abrir o navegador padrão
+  const LOCK_ALLOWED = new Set(['ui:init', 'ui:unlock', 'ui:open-browser', 'ui:activity', 'ui:icon-chosen', 'ui:lock']);
+  const _on = ipcMain.on.bind(ipcMain);
+  const _handle = ipcMain.handle.bind(ipcMain);
+  const guard = (ch) => locked && ch.startsWith('ui:') && !LOCK_ALLOWED.has(ch);
+  const on = (ch, fn) => _on(ch, (...a) => (guard(ch) ? undefined : fn(...a)));
+  const handle = (ch, fn) => _handle(ch, (...a) => (guard(ch) ? null : fn(...a)));
+  ipcMain.on = on;
+  ipcMain.handle = handle;
+  try { registerIpcInner(); } finally { ipcMain.on = _on; ipcMain.handle = _handle; }
+  _on('ui:activity', () => { if (!locked) touchActivity(); });
+  _on('web:activity', () => { if (!locked) touchActivity(); });
+}
+function registerIpcInner() {
   ipcMain.handle('ui:init', () => ({
     locked,
     config: publicConfig(),
@@ -2297,12 +2323,25 @@ app.whenReady().then(() => {
   };
   powerMonitor.on('resume', () => setTimeout(() => recoverAll('PC retomou da suspensão'), 3000));
   powerMonitor.on('unlock-screen', () => recoverAll('tela do Windows desbloqueada'));
-  // bloqueio automático por inatividade do PC
+  // Bloqueio automático: conta o tempo SEM USAR O MULTISOCIAL (antes contava o PC inteiro parado,
+  // então se você seguia usando outros programas o app nunca bloqueava).
+  const autoLockMs = () => (Number(store.get('autoLockMinutes')) || 0) * 60000;
   setInterval(() => {
-    const min = Number(store.get('autoLockMinutes')) || 0;
-    if (!min || !hasPin() || locked) return;
-    try { if (powerMonitor.getSystemIdleTime() >= min * 60) lockApp(); } catch {}
-  }, 30000);
+    const ms = autoLockMs();
+    if (!ms || !hasPin() || locked) return;
+    // assistindo algo com a janela na frente conta como uso
+    const t = activeTab();
+    if (win && win.isFocused() && win.isVisible() && !win.isMinimized() && t && t.audible) touchActivity();
+    if (Date.now() - lastActivity >= ms) { log('bloqueio automático por inatividade'); lockApp(); }
+  }, 10000);
+  // PC suspenso / tela do Windows bloqueada: ao voltar, bloqueia se passou do tempo
+  const lockIfAway = () => {
+    const ms = autoLockMs();
+    if (ms && hasPin() && !locked && Date.now() - lastActivity >= ms) lockApp();
+  };
+  powerMonitor.on('resume', lockIfAway);
+  powerMonitor.on('unlock-screen', lockIfAway);
+  powerMonitor.on('lock-screen', () => { if (autoLockMs() && hasPin() && !locked) lockApp(); });
   activateTab('home');
 });
 

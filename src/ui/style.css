@@ -289,3 +289,7 @@ kbd { font-family: inherit; font-size: 11px; background: var(--panel2); border: 
 
 /* cursor do PIN só pisca com o app em primeiro plano */
 body.app-blurred #unlock-pin { caret-color: transparent; }
+
+/* bloqueado: a barra do topo fica por cima da tela de bloqueio, mas só o atalho do navegador funciona */
+body.locked #titlebar { z-index: 101; background: transparent; }
+body.locked #titlebar > *:not(#browser-btn):not(.drag):not(.controls-space) { visibility: hidden; pointer-events: none; }

@@ -1,7 +1,7 @@
 {
   "name": "multisocial",
   "productName": "MultiSocial",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Todas as suas redes sociais em um só app, com abas, PiP e mais.",
   "main": "src/main.js",
   "author": "Buno",

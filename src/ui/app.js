@@ -575,6 +575,7 @@ ms.on('pin:setup', () => { ms.send('ui:open-settings'); setTimeout(showPinModal,
 
 function setLocked(on) {
   $('#lockscreen').classList.toggle('hidden', !on);
+  document.body.classList.toggle('locked', !!on);
   document.querySelectorAll('.modal-back').forEach((m) => m.remove());
   if (on) { $('#unlock-pin').value = ''; $('#unlock-error').textContent = ''; setTimeout(() => $('#unlock-pin').focus(), 50); }
 }
@@ -654,4 +655,11 @@ ms.on('downloads', (d) => {
   renderTabs();
   setClockRunning(tabState.active === 'home');
   if (init.locked) setLocked(true);
+})();
+
+// uso do app (bloqueio automático por inatividade)
+(() => {
+  let last = 0;
+  const ping = () => { const n = Date.now(); if (n - last > 5000) { last = n; ms.send('ui:activity'); } };
+  for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown']) window.addEventListener(ev, ping, { passive: true, capture: true });
 })();
