@@ -290,6 +290,9 @@ kbd { font-family: inherit; font-size: 11px; background: var(--panel2); border: 
 /* cursor do PIN só pisca com o app em primeiro plano */
 body.app-blurred #unlock-pin { caret-color: transparent; }
 
-/* bloqueado: a barra do topo fica por cima da tela de bloqueio, mas só o atalho do navegador funciona */
-body.locked #titlebar { z-index: 101; background: transparent; }
+/* bloqueado: a barra do topo continua (arrastar a janela + atalho do navegador); o resto dela fica oculto.
+   A tela de bloqueio começa abaixo da barra e NÃO é área de arrastar — no Windows uma área de arrastar
+   por cima do botão engolia o clique. */
+body.locked #titlebar { z-index: 101; }
+body.locked #lockscreen { top: var(--tab-h); -webkit-app-region: no-drag; }
 body.locked #titlebar > *:not(#browser-btn):not(.drag):not(.controls-space) { visibility: hidden; pointer-events: none; }
